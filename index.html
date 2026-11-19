@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AroundU — Indore Live Hyperlocal App</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .ig-gradient {
+      background: linear-gradient(135deg, #f58529 0%, #dd2a7b 52%, #8134af 100%);
+    }
+    .ig-text-gradient {
+      background: linear-gradient(135deg, #f58529 0%, #dd2a7b 50%, #8134af 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .card-pop {
+      transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+    }
+    .card-pop:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.18);
+    }
+  </style>
+</head>
+<body class="bg-neutral-100 min-h-screen text-neutral-900 flex justify-center items-center font-sans antialiased">
+
+  <!-- AUTH / ONBOARDING SCREEN WITH REAL EMAIL OTP -->
+  <div id="auth-screen" class="w-full max-w-md min-h-screen bg-white flex flex-col justify-between p-6 shadow-2xl relative z-50 border-x border-neutral-200/70">
+    <div class="flex flex-col gap-4 my-auto">
+      <div class="text-center">
+        <div class="w-16 h-16 ig-gradient rounded-2xl mx-auto flex items-center justify-center text-white font-black text-3xl shadow-lg shadow-pink-500/20 mb-2 tracking-tight">
+          U
+        </div>
+        <h1 class="text-3xl font-black tracking-tight ig-text-gradient">AroundU</h1>
+        <p class="text-xs text-neutral-500 font-medium mt-0.5">
+          Email OTP Verified • Indore Live Hyperlocal Network
+        </p>
+      </div>
+
+      <form id="signup-form" class="flex flex-col gap-3">
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Full Name</label>
+          <input
+            type="text"
+            id="reg-name"
+            required
+            placeholder="e.g., Vaishali Sharma"
+            class="w-full mt-1 px-3.5 py-2.5 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-pink-500 bg-neutral-50 font-medium transition"
+          />
+        </div>
+
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Gmail / Email Address</label>
+          <div class="flex gap-2 mt-1">
+            <input
+              type="email"
+              id="reg-email"
+              required
+              placeholder="yourname@gmail.com"
+              class="flex-1 px-3.5 py-2.5 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-pink-500 bg-neutral-50 font-medium transition"
+            />
+            <button
+              type="button"
+              id="send-otp-btn"
+              onclick="sendEmailOtp()"
+              class="px-3.5 py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-bold shrink-0 transition cursor-pointer"
+            >
+              Send OTP
+            </button>
+          </div>
+          <p id="otp-status-msg" class="text-[11px] text-neutral-500 mt-1 hidden"></p>
+        </div>
+
+        <div id="otp-verify-box" class="hidden bg-pink-50/60 border border-pink-200 rounded-2xl p-3 flex flex-col gap-2">
+          <div class="flex justify-between items-center">
+            <label class="text-[10px] font-bold text-pink-700 uppercase tracking-wider">Enter Gmail OTP Code</label>
+            <span id="otp-badge" class="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Unverified</span>
+          </div>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              id="reg-otp-code"
+              inputmode="numeric"
+              maxlength="8"
+              placeholder="Enter code from Gmail"
+              class="flex-1 px-3 py-2 border border-pink-200 rounded-xl text-xs bg-white font-bold tracking-widest focus:outline-none focus:border-pink-500"
+            />
+            <button
+              type="button"
+              id="verify-otp-btn"
+              onclick="verifyEmailOtp()"
+              class="px-3.5 py-2 rounded-xl ig-gradient text-white text-[11px] font-bold shrink-0 cursor-pointer"
+            >
+              Verify OTP
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Username</label>
+            <input
+              type="text"
+              id="reg-username"
+              required
+              placeholder="vaishali_indore"
+              class="w-full mt-1 px-3.5 py-2.5 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-pink-500 bg-neutral-50 font-medium transition"
+            />
+          </div>
+          <div>
+            <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Date of Birth (16+)</label>
+            <input
+              type="date"
+              id="reg-dob"
+              required
+              class="w-full mt-1 px-3 py-2 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-pink-500 bg-neutral-50 font-medium text-neutral-700 transition"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">City</label>
+          <select
+            id="reg-city"
+            class="w-full mt-1 px-3.5 py-2.5 border border-neutral-200 rounded-xl text-xs bg-neutral-50 font-semibold text-neutral-700 focus:outline-none focus:border-pink-500 transition"
+          >
+            <option value="Indore">Indore (Silicon City, Rau, Vijay Nagar, AB Road)</option>
+            <option value="Bhopal">Bhopal</option>
+            <option value="Ujjain">Ujjain</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">
+            Your Interests (Personalizes Reels & Feed)
+          </label>
+          <div id="reg-interests" class="flex flex-wrap gap-1.5">
+            <button type="button" data-interest="Entertainment" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition">
+              🎬 Entertainment
+            </button>
+            <button type="button" data-interest="Sports" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition">
+              ⚽ Sports & Football
+            </button>
+            <button type="button" data-interest="Market" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition">
+              🛍️ Market & Errands
+            </button>
+            <button type="button" data-interest="Cafe" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition">
+              ☕ Cafes & Food
+            </button>
+            <button type="button" data-interest="Construction" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition">
+              🏗️ Construction
+            </button>
+            <button type="button" data-interest="Stationery" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition">
+              📚 Stationery
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          class="w-full ig-gradient text-white py-3.5 rounded-xl font-bold text-xs hover:opacity-95 active:scale-[0.99] transition shadow-lg shadow-pink-500/20 mt-1 cursor-pointer"
+        >
+          Complete Onboarding
+        </button>
+      </form>
+    </div>
+
+    <p class="text-[10px] text-center text-neutral-400 font-medium pt-3 border-t border-neutral-100">
+      Real Gmail OTP Verification • 16+ Age Protected • Indore Network
+    </p>
+  </div>
+
+  <!-- MAIN APP DASHBOARD -->
+  <div id="app-dashboard" class="w-full max-w-md min-h-screen bg-neutral-50 shadow-2xl flex flex-col relative hidden pb-24 border-x border-neutral-200/70">
+    <!-- Top Bar -->
+    <header class="bg-white/95 backdrop-blur-md border-b border-neutral-200/80 px-4 py-3 sticky top-0 z-40 flex justify-between items-center">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 ig-gradient rounded-xl flex items-center justify-center text-white font-black text-lg shadow-sm">
+          U
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-base font-black tracking-tight text-neutral-900">AroundU</h2>
+            <span class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-pink-50 text-pink-600 border border-pink-200">
+              Indore Live
+            </span>
+          </div>
+          <p class="text-[11px] text-neutral-500 font-medium">
+            📍 Indore • <span id="header-radius-label" class="font-bold text-neutral-800">10km Radius</span>
+          </p>
+        </div>
+      </div>
+
+      <button
+        onclick="handleLogout()"
+        class="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-700 px-3 py-1.5 rounded-full font-bold transition cursor-pointer"
+      >
+        Logout
+      </button>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="bg-white border-b border-neutral-200/70 flex justify-around px-1.5 pt-2.5 pb-1 text-[11px] font-bold text-neutral-400 sticky top-[61px] z-30">
+      <button onclick="switchTab('explore')" id="tab-explore" class="text-neutral-900 border-b-2 border-neutral-900 pb-2 px-1 transition cursor-pointer">
+        🏪 Places
+      </button>
+      <button onclick="switchTab('feed')" id="tab-feed" class="pb-2 px-1 hover:text-neutral-800 transition cursor-pointer">
+        ⚡ Nearby
+      </button>
+      <button onclick="switchTab('reels')" id="tab-reels" class="pb-2 px-1 hover:text-neutral-800 transition cursor-pointer">
+        🎥 Reels
+      </button>
+      <button onclick="switchTab('communities')" id="tab-communities" class="pb-2 px-1 hover:text-neutral-800 transition cursor-pointer">
+        💬 Groups
+      </button>
+      <button onclick="switchTab('profile')" id="tab-profile" class="pb-2 px-1 hover:text-neutral-800 transition cursor-pointer">
+        👤 Profile
+      </button>
+    </nav>
+
+    <!-- TAB 1: LIVE PLACES & VERIFIED VENDORS -->
+    <div id="view-explore" class="p-4 flex flex-col gap-3.5 flex-grow">
+      <div class="bg-white p-3.5 rounded-2xl border border-neutral-200/80 shadow-xs flex flex-col gap-3">
+        <div class="flex justify-between items-center">
+          <span class="text-xs font-bold text-neutral-800">Discovery Radius</span>
+          <span id="radius-val" class="text-xs font-extrabold text-pink-600 bg-pink-50 px-2.5 py-0.5 rounded-full">
+            10 km
+          </span>
+        </div>
+        <input
+          type="range"
+          id="radiusSlider"
+          min="2"
+          max="25"
+          value="10"
+          oninput="updateRadius(this.value)"
+          class="w-full accent-pink-600 cursor-pointer"
+        />
+
+        <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+          <button onclick="filterShops('All', this)" class="shop-filter-btn px-3 py-1.5 text-[11px] rounded-full bg-neutral-900 text-white font-bold transition shrink-0 cursor-pointer">
+            All
+          </button>
+          <button onclick="filterShops('Construction', this)" class="shop-filter-btn px-3 py-1.5 text-[11px] rounded-full bg-neutral-100 text-neutral-700 font-semibold hover:bg-neutral-200 transition shrink-0 cursor-pointer">
+            🏗️ Construction
+          </button>
+          <button onclick="filterShops('Cafe', this)" class="shop-filter-btn px-3 py-1.5 text-[11px] rounded-full bg-neutral-100 text-neutral-700 font-semibold hover:bg-neutral-200 transition shrink-0 cursor-pointer">
+            ☕ Cafes
+          </button>
+          <button onclick="filterShops('Hardware', this)" class="shop-filter-btn px-3 py-1.5 text-[11px] rounded-full bg-neutral-100 text-neutral-700 font-semibold hover:bg-neutral-200 transition shrink-0 cursor-pointer">
+            🔩 Hardware
+          </button>
+          <button onclick="filterShops('Stationery', this)" class="shop-filter-btn px-3 py-1.5 text-[11px] rounded-full bg-neutral-100 text-neutral-700 font-semibold hover:bg-neutral-200 transition shrink-0 cursor-pointer">
+            📚 Stationery
+          </button>
+          <button onclick="filterShops('Grocery', this)" class="shop-filter-btn px-3 py-1.5 text-[11px] rounded-full bg-neutral-100 text-neutral-700 font-semibold hover:bg-neutral-200 transition shrink-0 cursor-pointer">
+            🛒 Grocery
+          </button>
+          <button onclick="filterShops('Medical', this)" class="shop-filter-btn px-3 py-1.5 text-[11px] rounded-full bg-neutral-100 text-neutral-700 font-semibold hover:bg-neutral-200 transition shrink-0 cursor-pointer">
+            🏥 Pharmacy
+          </button>
+        </div>
+      </div>
+
+      <div id="shops-list-container" class="flex flex-col gap-3"></div>
+    </div>
+
+    <!-- TAB 2: TIME-BOUND NEARBY NOTICES & FINDING PEOPLE ("AroundU" Core) -->
+    <div id="view-feed" class="p-4 flex flex-col gap-3.5 hidden flex-grow">
+      <div class="bg-white px-4 py-3 rounded-2xl border border-neutral-200/80 flex justify-between items-center gap-2">
+        <div>
+          <h3 class="font-bold text-neutral-900 text-sm">Nearby Live Notices</h3>
+          <p class="text-[11px] text-neutral-500">Find buddies for market, football, or quick help</p>
+        </div>
+        <button
+          onclick="openPostModal()"
+          class="text-xs ig-gradient text-white font-bold px-3.5 py-2 rounded-full shrink-0 cursor-pointer"
+        >
+          + Post Notice
+        </button>
+      </div>
+
+      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <button onclick="filterFeedNotices('All', this)" class="notice-filter-btn px-3 py-1 rounded-full text-[11px] font-bold bg-neutral-900 text-white shrink-0 cursor-pointer">
+          All Active
+        </button>
+        <button onclick="filterFeedNotices('Market', this)" class="notice-filter-btn px-3 py-1 rounded-full text-[11px] font-semibold bg-white text-neutral-700 border border-neutral-200 shrink-0 cursor-pointer">
+          🛍️ Market Buddy
+        </button>
+        <button onclick="filterFeedNotices('Sports', this)" class="notice-filter-btn px-3 py-1 rounded-full text-[11px] font-semibold bg-white text-neutral-700 border border-neutral-200 shrink-0 cursor-pointer">
+          ⚽ Football / Games
+        </button>
+        <button onclick="filterFeedNotices('Looking For', this)" class="notice-filter-btn px-3 py-1 rounded-full text-[11px] font-semibold bg-white text-neutral-700 border border-neutral-200 shrink-0 cursor-pointer">
+          🔍 Looking For
+        </button>
+      </div>
+
+      <div id="feed-cards-container" class="flex flex-col gap-3"></div>
+    </div>
+
+    <!-- TAB 3: REELS -->
+    <div id="view-reels" class="p-4 flex flex-col gap-4 hidden flex-grow">
+      <div class="bg-white px-4 py-3 rounded-2xl border border-neutral-200/80 flex justify-between items-center">
+        <div>
+          <h3 class="font-bold text-neutral-900 text-sm">Local Reels</h3>
+          <p class="text-[11px] text-neutral-500">Starts with your selected interests</p>
+        </div>
+        <span class="text-[10px] font-bold px-2.5 py-1 rounded-full bg-pink-50 text-pink-600">
+          For You
+        </span>
+      </div>
+      <div id="reels-list-container" class="flex flex-col gap-4"></div>
+    </div>
+
+    <!-- TAB 4: WHATSAPP-STYLE COMMUNITIES / GROUPS -->
+    <div id="view-communities" class="p-4 flex flex-col gap-3.5 hidden flex-grow">
+      <div class="bg-white px-4 py-3 rounded-2xl border border-neutral-200/80 flex justify-between items-center">
+        <div>
+          <h3 class="font-bold text-neutral-900 text-sm">Group Chats</h3>
+          <p class="text-[11px] text-neutral-500">Saved chats • Invite people you know</p>
+        </div>
+        <button
+          onclick="openGroupModal()"
+          class="text-xs bg-neutral-900 hover:bg-neutral-800 text-white font-bold px-3.5 py-2 rounded-full transition cursor-pointer"
+        >
+          + New Group
+        </button>
+      </div>
+      <div id="communities-list-container" class="flex flex-col gap-3"></div>
+    </div>
+
+    <!-- TAB 5: CLEAN USER PROFILE -->
+    <div id="view-profile" class="p-4 flex flex-col gap-4 hidden flex-grow">
+      <div class="bg-white p-5 rounded-3xl border border-neutral-200/80 shadow-xs flex flex-col items-center text-center gap-3">
+        <div class="w-16 h-16 p-[2px] ig-gradient rounded-full">
+          <div id="profile-initial" class="w-full h-full bg-white text-neutral-900 rounded-full flex items-center justify-center font-black text-2xl">
+            U
+          </div>
+        </div>
+        <div>
+          <h3 id="profile-name" class="font-bold text-base text-neutral-900">Name</h3>
+          <p id="profile-handle" class="text-xs text-neutral-500 font-medium">@username</p>
+          <p id="profile-email" class="text-[11px] text-pink-600 font-semibold mt-0.5">email@gmail.com</p>
+          <span class="inline-block mt-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+            ✓ Gmail Verified
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onclick="openEditProfileModal()"
+          class="text-xs bg-neutral-900 hover:bg-neutral-800 text-white font-bold px-4 py-2 rounded-full transition cursor-pointer"
+        >
+          ✏️ Edit Profile
+        </button>
+
+        <div class="flex gap-4 border-y border-neutral-100 py-2.5 w-full justify-around text-xs">
+          <div>
+            <span class="font-extrabold text-neutral-900 block" id="stat-posts">0</span>
+            <span class="text-neutral-400 text-[11px]">Active Notices</span>
+          </div>
+          <div>
+            <span class="font-extrabold text-neutral-900 block" id="stat-groups">0</span>
+            <span class="text-neutral-400 text-[11px]">Groups</span>
+          </div>
+          <div>
+            <span class="font-extrabold text-neutral-900 block" id="stat-city">Indore</span>
+            <span class="text-neutral-400 text-[11px]">City</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 class="font-bold text-[11px] text-neutral-500 mb-2 uppercase tracking-wider px-1">
+          Your Active Notices
+        </h4>
+        <div id="my-posts-container" class="flex flex-col gap-2.5"></div>
+      </div>
+    </div>
+
+    <!-- Floating Quick Notice Button -->
+    <button
+      onclick="openPostModal()"
+      title="Post Time-Bound Notice"
+      class="fixed bottom-6 right-6 ig-gradient text-white w-14 h-14 rounded-full shadow-xl shadow-pink-500/25 hover:opacity-95 active:scale-95 font-bold text-2xl flex items-center justify-center transition z-40 cursor-pointer"
+    >
+      +
+    </button>
+  </div>
+
+  <!-- EDIT PROFILE MODAL -->
+  <div id="editProfileModal" class="fixed inset-0 bg-neutral-950/60 hidden flex justify-center items-center z-50 p-4 backdrop-blur-xs">
+    <div class="bg-white rounded-3xl p-6 w-full max-w-sm flex flex-col gap-4 shadow-2xl border border-neutral-200">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-neutral-900 text-base">Edit Profile</h3>
+        <button onclick="closeEditProfileModal()" class="text-neutral-400 hover:text-neutral-700 font-bold text-lg px-1 cursor-pointer">✕</button>
+      </div>
+
+      <form id="edit-profile-form" class="flex flex-col gap-3">
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Full Name</label>
+          <input
+            type="text"
+            id="edit-name"
+            required
+            class="w-full mt-1 p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 focus:outline-none focus:border-pink-500"
+          />
+        </div>
+
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Username</label>
+          <input
+            type="text"
+            id="edit-username"
+            required
+            class="w-full mt-1 p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 focus:outline-none focus:border-pink-500"
+          />
+        </div>
+
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">City</label>
+          <select
+            id="edit-city"
+            class="w-full mt-1 p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 font-semibold text-neutral-700 focus:outline-none focus:border-pink-500"
+          >
+            <option value="Indore">Indore</option>
+            <option value="Bhopal">Bhopal</option>
+            <option value="Ujjain">Ujjain</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider block mb-1.5">Interests</label>
+          <div id="edit-interests" class="flex flex-wrap gap-1.5">
+            <button type="button" data-interest="Entertainment" onclick="toggleEditInterest(this)" class="edit-interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">🎬 Entertainment</button>
+            <button type="button" data-interest="Sports" onclick="toggleEditInterest(this)" class="edit-interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">⚽ Sports</button>
+            <button type="button" data-interest="Market" onclick="toggleEditInterest(this)" class="edit-interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">🛍️ Market</button>
+            <button type="button" data-interest="Cafe" onclick="toggleEditInterest(this)" class="edit-interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">☕ Cafe</button>
+            <button type="button" data-interest="Construction" onclick="toggleEditInterest(this)" class="edit-interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">🏗️ Construction</button>
+            <button type="button" data-interest="Stationery" onclick="toggleEditInterest(this)" class="edit-interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">📚 Stationery</button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          class="ig-gradient text-white py-3 rounded-xl font-bold text-xs hover:opacity-95 transition cursor-pointer"
+        >
+          Save Changes
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- CREATE GROUP MODAL -->
+  <div id="groupModal" class="fixed inset-0 bg-neutral-950/60 hidden flex justify-center items-center z-50 p-4 backdrop-blur-xs">
+    <div class="bg-white rounded-3xl p-6 w-full max-w-sm flex flex-col gap-4 shadow-2xl border border-neutral-200">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-neutral-900 text-base">New Group</h3>
+        <button onclick="closeGroupModal()" class="text-neutral-400 hover:text-neutral-700 font-bold text-lg px-1 cursor-pointer">✕</button>
+      </div>
+      <form id="group-form" class="flex flex-col gap-3">
+        <input
+          type="text"
+          id="groupName"
+          required
+          placeholder="Group name (e.g., Silicon City Friends)"
+          class="w-full p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 focus:outline-none focus:border-pink-500"
+        />
+        <input
+          type="text"
+          id="groupInviteUser"
+          placeholder="Invite username (optional, e.g., friend_username)"
+          class="w-full p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 focus:outline-none focus:border-pink-500"
+        />
+        <textarea
+          id="groupDesc"
+          required
+          rows="2"
+          placeholder="Short note for your group..."
+          class="w-full p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 focus:outline-none focus:border-pink-500"
+        ></textarea>
+        <button
+          type="submit"
+          class="ig-gradient text-white py-3 rounded-xl font-bold text-xs hover:opacity-95 transition cursor-pointer"
+        >
+          Create Group
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- WHATSAPP-STYLE GROUP CHAT WORKSPACE MODAL -->
+  <div id="groupWorkspaceModal" class="fixed inset-0 bg-neutral-950/60 hidden flex justify-center items-center z-50 p-3 backdrop-blur-xs">
+    <div class="bg-white rounded-3xl p-5 w-full max-w-md h-[82vh] flex flex-col gap-3 shadow-2xl border border-neutral-200 overflow-hidden">
+      <div class="flex justify-between items-center border-b border-neutral-100 pb-3">
+        <div>
+          <h3 id="gw-title" class="font-bold text-neutral-900 text-base">Group Name</h3>
+          <p id="gw-meta" class="text-[11px] text-neutral-500">Members • Admin</p>
+        </div>
+        <button onclick="closeGroupWorkspace()" class="text-neutral-400 hover:text-neutral-700 font-bold text-lg px-2 cursor-pointer">✕</button>
+      </div>
+
+      <div id="gw-items-list" class="flex-1 overflow-y-auto flex flex-col gap-2.5 py-1"></div>
+
+      <form id="group-item-form" class="flex gap-2 pt-2 border-t border-neutral-100">
+        <input
+          type="text"
+          id="gw-input"
+          required
+          placeholder="Write a message..."
+          class="flex-1 px-3.5 py-2.5 border border-neutral-200 rounded-full text-xs focus:outline-none focus:border-pink-500 bg-neutral-50"
+        />
+        <button
+          type="submit"
+          class="ig-gradient text-white px-4 rounded-full font-bold text-xs hover:opacity-95 transition cursor-pointer"
+        >
+          Send
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- CREATE TIME-BOUND NEARBY NOTICE MODAL -->
+  <div id="postModal" class="fixed inset-0 bg-neutral-950/60 hidden flex justify-center items-center z-50 p-4 backdrop-blur-xs">
+    <div class="bg-white rounded-3xl p-6 w-full max-w-sm flex flex-col gap-4 shadow-2xl border border-neutral-200">
+      <div class="flex justify-between items-center">
+        <div>
+          <h3 class="font-bold text-neutral-900 text-base">Post Nearby Notice</h3>
+          <p class="text-[11px] text-neutral-500">Shown to nearby people for selected time</p>
+        </div>
+        <button onclick="closePostModal()" class="text-neutral-400 hover:text-neutral-700 font-bold text-lg px-1 cursor-pointer">✕</button>
+      </div>
+
+      <form id="broadcast-form" class="flex flex-col gap-3">
+        <input
+          type="text"
+          id="postTitle"
+          required
+          placeholder="e.g., Need 3 players for football at 6 PM"
+          class="w-full p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 focus:outline-none focus:border-pink-500"
+        />
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <div>
+            <label class="text-[10px] font-bold text-neutral-400 uppercase">Type</label>
+            <select
+              id="postCategory"
+              class="w-full mt-1 p-2.5 border border-neutral-200 rounded-xl text-xs bg-neutral-50 font-medium text-neutral-700 focus:outline-none focus:border-pink-500"
+            >
+              <option value="Market">🛍️ Market Buddy</option>
+              <option value="Sports">⚽ Football / Games</option>
+              <option value="Looking For">🔍 Looking For</option>
+              <option value="Cafe">☕ Cafe Meetup</option>
+              <option value="Entertainment">🎬 Entertainment</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="text-[10px] font-bold text-neutral-400 uppercase">Show For</label>
+            <select
+              id="postDuration"
+              class="w-full mt-1 p-2.5 border border-neutral-200 rounded-xl text-xs bg-neutral-50 font-medium text-neutral-700 focus:outline-none focus:border-pink-500"
+            >
+              <option value="1">1 Hour</option>
+              <option value="3" selected>3 Hours</option>
+              <option value="6">6 Hours</option>
+              <option value="24">24 Hours</option>
+            </select>
+          </div>
+        </div>
+
+        <textarea
+          id="postDesc"
+          required
+          rows="2"
+          placeholder="Area, timing, or what you're looking for..."
+          class="w-full p-3 border border-neutral-200 rounded-xl text-xs bg-neutral-50 focus:outline-none focus:border-pink-500"
+        ></textarea>
+
+        <button
+          type="submit"
+          class="ig-gradient text-white py-3 rounded-xl font-bold text-xs hover:opacity-95 transition cursor-pointer"
+        >
+          Publish Notice
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
