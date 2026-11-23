@@ -16,10 +16,9 @@ const GROUPS_KEY = "aroundu_groups_cache";
 const CHAT_MESSAGES_KEY = "aroundu_chat_messages_cache";
 
 let userSession = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+let currentSignupStep = 1;
 let selectedSignupInterests = [];
 let editSelectedInterests = [];
-let otpVerified = false;
-let generatedDemoOtp = "";
 
 let localNoticesList = JSON.parse(localStorage.getItem(NOTICES_KEY) || "[]");
 let joinedNoticeIds = JSON.parse(localStorage.getItem(IM_IN_KEY) || "[]");
@@ -133,56 +132,143 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
-function sendEmailOtp() {
-  const email = String(document.getElementById("reg-email")?.value || "")
-    .trim()
-    .toLowerCase();
-  const statusMsg = document.getElementById("otp-status-msg");
-  const verifyBox = document.getElementById("otp-verify-box");
-  const badge = document.getElementById("otp-badge");
+function switchAuthMode(mode = "login") {
+  const loginForm = document.getElementById("login-form");
+  const signupForm = document.getElementById("signup-form");
+  const loginBtn = document.getElementById("mode-login-btn");
+  const signupBtn = document.getElementById("mode-signup-btn");
 
-  if (!isValidEmail(email)) {
-    alert("Please enter a valid email address first.");
+  const isSignup = mode === "signup";
+  if (loginForm) loginForm.classList.toggle("hidden", isSignup);
+  if (signupForm) signupForm.classList.toggle("hidden", !isSignup);
+
+  if (loginBtn) {
+    loginBtn.className = isSignup
+      ? "py-2 rounded-lg text-xs font-bold text-neutral-500 hover:text-neutral-800 transition cursor-pointer"
+      : "py-2 rounded-lg text-xs font-bold bg-white text-neutral-900 shadow-sm transition cursor-pointer";
+  }
+  if (signupBtn) {
+    signupBtn.className = isSignup
+      ? "py-2 rounded-lg text-xs font-bold bg-white text-neutral-900 shadow-sm transition cursor-pointer"
+      : "py-2 rounded-lg text-xs font-bold text-neutral-500 hover:text-neutral-800 transition cursor-pointer";
+  }
+
+  if (isSignup) {
+    goToSignupStep(currentSignupStep || 1);
+  }
+}
+
+function goToSignupStep(step) {
+  if (step > 1) {
+    const fullName = String(document.getElementById("reg-name")?.value || "").trim();
+    const email = String(document.getElementById("reg-email")?.value || "").trim().toLowerCase();
+    const password = String(document.getElementById("reg-password")?.value || "");
+
+    if (!fullName) {
+      alert("Please enter your full name.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+    if (password.length < 6) {
+      alert("Password must be at least 6 characters long.");
+      return;
+    }
+  }
+
+  if (step > 2) {
+    const usernameEl = document.getElementById("reg-username");
+    const username = normalizeUsername(usernameEl?.value || "");
+    const dob = String(document.getElementById("reg-dob")?.value || "").trim();
+    if (usernameEl) usernameEl.value = username;
+
+    if (!username || username.length < 3) {
+      alert("Username must be at least 3 characters long (letters, numbers, and underscores only).");
+      return;
+    }
+    if (!isAge16Plus(dob)) {
+      alert("You must be at least 16 years old to create an account.");
+      return;
+    }
+  }
+
+  currentSignupStep = step;
+  const s1 = document.getElementById("signup-step-1");
+  const s2 = document.getElementById("signup-step-2");
+  const s3 = document.getElementById("signup-step-3");
+  const indicator = document.getElementById("step-indicator");
+
+  if (s1) s1.classList.toggle("hidden", step !== 1);
+  if (s2) s2.classList.toggle("hidden", step !== 2);
+  if (s3) s3.classList.toggle("hidden", step !== 3);
+
+  if (indicator) {
+    const labels = {
+      1: "Step 1 of 3 • Account Details",
+      2: "Step 2 of 3 • Username & Age",
+      3: "Step 3 of 3 • City & Interests"
+    };
+    indicator.textContent = labels[step] || "Step 1 of 3 • Account Details";
+  }
+}
+
+async function handleLogin(event) {
+  if (event) event.preventDefault();
+
+  const identifierRaw = String(document.getElementById("login-identifier")?.value || "").trim();
+  const password = String(document.getElementById("login-password")?.value || "");
+
+  if (!identifierRaw || !password) {
+    alert("Please enter your email or username and password.");
     return;
   }
 
-  generatedDemoOtp = String(Math.floor(100000 + Math.random() * 900000));
-  otpVerified = false;
+  const cleanIdentifier = identifierRaw.toLowerCase();
+  const cleanHandle = normalizeUsername(identifierRaw);
 
-  if (verifyBox) verifyBox.classList.remove("hidden");
-  if (badge) {
-    badge.textContent = "Ready";
-    badge.className =
-      "text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full";
-  }
-  if (statusMsg) {
-    statusMsg.classList.remove("hidden");
-    statusMsg.textContent = `Verification code ready: ${generatedDemoOtp} (or click Verify OTP / continue onboarding).`;
+  const localUsers = JSON.parse(localStorage.getItem(USERS_CACHE_KEY) || "[]");
+  let matchedUser = localUsers.find(
+    (u) =>
+      String(u.email || "").toLowerCase() === cleanIdentifier ||
+      normalizeUsername(u.username) === cleanHandle
+  );
+
+  if (!matchedUser && supabaseClient) {
+    const byEmail = await supabaseClient
+      .from("profiles")
+      .select("*")
+      .ilike("email", cleanIdentifier)
+      .limit(1);
+
+    if (byEmail.data && byEmail.data.length) {
+      matchedUser = byEmail.data[0];
+    } else if (cleanHandle) {
+      const byUsername = await supabaseClient
+        .from("profiles")
+        .select("*")
+        .ilike("username", cleanHandle)
+        .limit(1);
+      if (byUsername.data && byUsername.data.length) {
+        matchedUser = byUsername.data[0];
+      }
+    }
   }
 
-  const codeInput = document.getElementById("reg-otp-code");
-  if (codeInput) codeInput.value = generatedDemoOtp;
-}
-
-function verifyEmailOtp() {
-  const codeInput = String(document.getElementById("reg-otp-code")?.value || "").trim();
-  const badge = document.getElementById("otp-badge");
-  const statusMsg = document.getElementById("otp-status-msg");
-
-  if (!codeInput && !generatedDemoOtp) {
-    generatedDemoOtp = String(Math.floor(100000 + Math.random() * 900000));
+  if (!matchedUser) {
+    alert("Account not found. Please sign up to create a new account.");
+    return;
   }
 
-  otpVerified = true;
-  if (badge) {
-    badge.textContent = "Verified";
-    badge.className =
-      "text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full";
+  if (matchedUser.password && matchedUser.password !== password) {
+    alert("Incorrect password. Please try again.");
+    return;
   }
-  if (statusMsg) {
-    statusMsg.classList.remove("hidden");
-    statusMsg.textContent = "Email verified. You can complete onboarding now.";
-  }
+
+  userSession = matchedUser;
+  localStorage.setItem(SESSION_KEY, JSON.stringify(userSession));
+  enterMainApp();
 }
 
 function toggleInterest(el, mode = "signup") {
@@ -244,7 +330,7 @@ async function isUsernameTaken(username, excludeUserId = null) {
 
   const { data, error } = await query.limit(1);
   if (error) {
-    console.warn("Supabase username check fallback:", error.message);
+    console.warn("Supabase username check warning:", error.message);
     return false;
   }
 
@@ -258,6 +344,7 @@ async function completeOnboarding(event) {
   const email = String(document.getElementById("reg-email")?.value || "")
     .trim()
     .toLowerCase();
+  const password = String(document.getElementById("reg-password")?.value || "");
   const usernameEl = document.getElementById("reg-username");
   const username = normalizeUsername(usernameEl?.value || "");
   const dob = String(document.getElementById("reg-dob")?.value || "").trim();
@@ -265,26 +352,21 @@ async function completeOnboarding(event) {
 
   if (usernameEl) usernameEl.value = username;
 
-  if (!fullName) {
-    alert("Please enter your full name.");
+  if (!fullName || !isValidEmail(email) || password.length < 6) {
+    goToSignupStep(1);
+    alert("Please complete Step 1 with your name, a valid email, and a 6+ character password.");
     return;
   }
-  if (!isValidEmail(email)) {
-    alert("Please enter a valid email address.");
-    return;
-  }
-  if (!username || username.length < 3) {
-    alert("Username must be at least 3 characters long (letters, numbers, and underscores only).");
-    return;
-  }
-  if (!isAge16Plus(dob)) {
-    alert("You must be at least 16 years old to create an account.");
+  if (!username || username.length < 3 || !isAge16Plus(dob)) {
+    goToSignupStep(2);
+    alert("Please complete Step 2 with a 3+ character username and a 16+ date of birth.");
     return;
   }
 
   try {
     const taken = await isUsernameTaken(username);
     if (taken) {
+      goToSignupStep(2);
       alert(`The username "${username}" is already taken. Please choose another one.`);
       return;
     }
@@ -301,7 +383,8 @@ async function completeOnboarding(event) {
 
     let savedRecord = {
       ...profileData,
-      id: userSession?.id || crypto.randomUUID()
+      id: userSession?.id || crypto.randomUUID(),
+      password
     };
 
     if (supabaseClient) {
@@ -313,12 +396,13 @@ async function completeOnboarding(event) {
 
       if (error) {
         if (error.code === "23505" || String(error.message).toLowerCase().includes("unique")) {
+          goToSignupStep(2);
           alert(`The username "${username}" is already registered. Please choose a different username.`);
           return;
         }
         console.warn("Supabase profile upsert warning:", error.message);
       } else if (data) {
-        savedRecord = data;
+        savedRecord = { ...data, password };
       }
     }
 
@@ -333,8 +417,8 @@ async function completeOnboarding(event) {
 
     enterMainApp();
   } catch (err) {
-    console.error("Onboarding failed:", err);
-    alert(err.message || "Unable to complete onboarding. Please try again.");
+    console.error("Account creation failed:", err);
+    alert(err.message || "Unable to create your account. Please try again.");
   }
 }
 
@@ -394,26 +478,28 @@ async function saveProfileChanges(event) {
     userSession = { ...userSession, ...updates };
     localStorage.setItem(SESSION_KEY, JSON.stringify(userSession));
     syncProfileUI();
-    alert("Profile updated successfully.");
+    alert("Profile changes saved.");
   } catch (err) {
     console.error("Profile update failed:", err);
-    alert(err.message || "Unable to update profile. Please try again.");
+    alert(err.message || "Unable to save profile changes. Please try again.");
   }
 }
 
 function handleLogout() {
   localStorage.removeItem(SESSION_KEY);
   userSession = null;
+  currentSignupStep = 1;
   const authScreen = document.getElementById("auth-screen");
   const dashboard = document.getElementById("app-dashboard");
   if (dashboard) dashboard.classList.add("hidden");
   if (authScreen) authScreen.classList.remove("hidden");
+  switchAuthMode("login");
 }
 
 function switchTab(tabName) {
   const sections = ["explore", "notices", "reels", "groups", "profile"];
   sections.forEach((sec) => {
-    const panel = document.getElementById(`section-${sec}`) || document.getElementById(`tab-panel-${sec}`);
+    const panel = document.getElementById(`section-${sec}`);
     const tabBtn = document.getElementById(`tab-${sec}`);
     if (panel) {
       panel.classList.toggle("hidden", sec !== tabName);
@@ -436,7 +522,7 @@ function syncProfileUI() {
 
   if (nameBadge) nameBadge.textContent = userSession.full_name || "AroundU Member";
   if (userBadge) userBadge.textContent = `@${userSession.username || "user"}`;
-  if (cityBadge) cityBadge.textContent = userSession.city || "Indore";
+  if (cityBadge) cityBadge.textContent = `City: ${userSession.city || "Indore"}`;
   if (vendorPhoneEl) vendorPhoneEl.textContent = VERIFICATION_CONTACT_PHONE;
 
   const editFullNameEl = document.getElementById("editFullName");
@@ -449,6 +535,16 @@ function syncProfileUI() {
 
   editSelectedInterests = Array.isArray(userSession.interests) ? [...userSession.interests] : [];
   renderInterestButtons("edit");
+}
+
+function setFeedTab(tabName) {
+  currentFeedTab = tabName;
+  renderFeedOrReels();
+}
+
+function setNoticeFilter(filterName) {
+  currentNoticeFilter = filterName;
+  renderNotices();
 }
 
 function getActiveNotices() {
@@ -539,7 +635,7 @@ function renderNotices() {
 
   const list = getActiveNotices();
   if (!list.length) {
-    container.innerHTML = `<p class="empty-state">No active notices match the current filter or radius.</p>`;
+    container.innerHTML = `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No active notices match the current filter or radius.</p>`;
     return;
   }
 
@@ -547,13 +643,13 @@ function renderNotices() {
     .map((n) => {
       const joined = joinedNoticeIds.includes(n.id);
       return `
-        <div class="notice-card" data-notice-id="${escapeHtml(n.id)}">
-          <div class="notice-meta">
+        <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-2 card-pop">
+          <div class="text-[11px] text-neutral-500 font-semibold">
             <span>${escapeHtml(n.category)}</span> • <span>${escapeHtml(n.area)}</span>
           </div>
-          <h4>${escapeHtml(n.title)}</h4>
-          <p class="notice-author">Posted by ${escapeHtml(n.author_name)} • ${Number(n.distance_km || 2).toFixed(1)} km</p>
-          <button type="button" onclick="toggleImIn('${escapeHtml(n.id)}')">
+          <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(n.title)}</h4>
+          <p class="text-[11px] text-neutral-500">Posted by ${escapeHtml(n.author_name)} • ${Number(n.distance_km || 2).toFixed(1)} km</p>
+          <button type="button" onclick="toggleImIn('${escapeHtml(n.id)}')" class="self-start px-3 py-1.5 rounded-xl text-xs font-bold ${joined ? "bg-pink-600 text-white" : "bg-neutral-100 hover:bg-neutral-200 text-neutral-800"} cursor-pointer">
             ${joined ? "I'm In ✓" : "I'm In"} (${Number(n.im_in_count || 0)})
           </button>
         </div>
@@ -564,27 +660,33 @@ function renderNotices() {
 
 function renderFeedOrReels() {
   const container = document.getElementById("feedContainer");
-  if (!container) return;
+  const reelsContainer = document.getElementById("reelsTabContainer");
 
   const interests = Array.isArray(userSession?.interests) ? userSession.interests : [];
-  const sorted = [...SAMPLE_REELS].sort((a, b) => {
+  const filtered = SAMPLE_REELS.filter(
+    (item) => currentCategory === "All" || item.tag === currentCategory
+  );
+  const sorted = filtered.sort((a, b) => {
     const aMatch = interests.includes(a.tag) ? 1 : 0;
     const bMatch = interests.includes(b.tag) ? 1 : 0;
     return bMatch - aMatch;
   });
 
-  container.innerHTML = sorted
+  const html = sorted
     .map(
       (item) => `
-        <div class="feed-card">
-          <span class="feed-tag">${escapeHtml(item.tag)} • ${escapeHtml(currentFeedTab)}</span>
-          <h4>${escapeHtml(item.title)}</h4>
-          <p>${escapeHtml(item.summary)}</p>
-          <small>${escapeHtml(item.creator)} • ${escapeHtml(item.location)}</small>
+        <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-1.5 card-pop">
+          <span class="text-[10px] font-bold text-pink-600 uppercase">${escapeHtml(item.tag)} • ${escapeHtml(currentFeedTab)}</span>
+          <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(item.title)}</h4>
+          <p class="text-xs text-neutral-600">${escapeHtml(item.summary)}</p>
+          <small class="text-[11px] text-neutral-400">${escapeHtml(item.creator)} • ${escapeHtml(item.location)}</small>
         </div>
       `
     )
     .join("");
+
+  if (container) container.innerHTML = html;
+  if (reelsContainer) reelsContainer.innerHTML = html;
 }
 
 function initGroups() {
@@ -607,9 +709,9 @@ function renderGroups() {
     .map((g) => {
       const isActive = g.id === activeGroupId;
       return `
-        <button type="button" class="group-item ${isActive ? "active" : ""}" onclick="selectGroup('${escapeHtml(g.id)}')">
-          <strong>${escapeHtml(g.name)}</strong>
-          <span>${escapeHtml(g.area)}</span>
+        <button type="button" class="text-left p-3 rounded-xl border ${isActive ? "bg-pink-50 border-pink-300" : "bg-white border-neutral-200/80"} cursor-pointer" onclick="selectGroup('${escapeHtml(g.id)}')">
+          <strong class="block text-xs font-bold text-neutral-900">${escapeHtml(g.name)}</strong>
+          <span class="text-[11px] text-neutral-500">${escapeHtml(g.area)}</span>
         </button>
       `;
     })
@@ -628,16 +730,16 @@ function renderGroupChat() {
 
   const messages = chatMessagesMap[activeGroupId] || [];
   if (!messages.length) {
-    box.innerHTML = `<p class="empty-state">Start the conversation in this group.</p>`;
+    box.innerHTML = `<p class="text-xs text-neutral-400">Start the conversation in this group.</p>`;
     return;
   }
 
   box.innerHTML = messages
     .map(
       (m) => `
-        <div class="chat-msg">
-          <strong>${escapeHtml(m.sender)}</strong>
-          <p>${escapeHtml(m.text)}</p>
+        <div class="mb-2 pb-2 border-b border-neutral-100 last:border-b-0">
+          <strong class="text-xs font-bold text-neutral-800">${escapeHtml(m.sender)}</strong>
+          <p class="text-xs text-neutral-600 mt-0.5">${escapeHtml(m.text)}</p>
         </div>
       `
     )
@@ -697,7 +799,7 @@ function enterMainApp() {
   if (dashboard) dashboard.classList.remove("hidden");
 
   const radiusLabel = document.getElementById("header-radius-label");
-  if (radiusLabel) radiusLabel.textContent = `${currentRadius}km Radius`;
+  if (radiusLabel) radiusLabel.textContent = `${currentRadius} km Radius`;
 
   syncProfileUI();
   renderNotices();
@@ -717,7 +819,7 @@ document.addEventListener("DOMContentLoaded", () => {
       currentRadius = Number(e.target.value || 10);
       if (radiusLabel) radiusLabel.textContent = `${currentRadius} km`;
       const headerLabel = document.getElementById("header-radius-label");
-      if (headerLabel) headerLabel.textContent = `${currentRadius}km Radius`;
+      if (headerLabel) headerLabel.textContent = `${currentRadius} km Radius`;
       renderNotices();
     });
   }
@@ -727,27 +829,15 @@ document.addEventListener("DOMContentLoaded", () => {
     categorySelect.addEventListener("change", (e) => {
       currentCategory = e.target.value || "All";
       renderNotices();
+      renderFeedOrReels();
     });
   }
-
-  const signupForm = document.getElementById("signup-form") || document.getElementById("onboardingForm");
-  if (signupForm) signupForm.addEventListener("submit", completeOnboarding);
-
-  const editForm = document.getElementById("editProfileForm");
-  if (editForm) editForm.addEventListener("submit", saveProfileChanges);
-
-  const noticeForm = document.getElementById("createNoticeForm");
-  if (noticeForm) noticeForm.addEventListener("submit", createNotice);
-
-  const chatForm = document.getElementById("groupChatForm");
-  if (chatForm) chatForm.addEventListener("submit", sendGroupMessage);
-
-  const logoutBtn = document.getElementById("logoutBtn");
-  if (logoutBtn) logoutBtn.addEventListener("click", handleLogout);
 
   renderInterestButtons("signup");
 
   if (userSession && userSession.username) {
     enterMainApp();
+  } else {
+    switchAuthMode("login");
   }
 });
