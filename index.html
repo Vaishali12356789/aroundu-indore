@@ -288,12 +288,13 @@
     </header>
 
     <!-- Navigation Tabs -->
-    <nav class="bg-white border-b border-neutral-200/70 flex justify-around px-1.5 pt-2.5 pb-1 text-[11px] font-bold text-neutral-400 sticky top-[61px] z-30">
-      <button type="button" onclick="switchTab('explore')" id="tab-explore" class="pb-2 px-2 cursor-pointer">Explore</button>
-      <button type="button" onclick="switchTab('notices')" id="tab-notices" class="pb-2 px-2 cursor-pointer">Notices</button>
-      <button type="button" onclick="switchTab('reels')" id="tab-reels" class="pb-2 px-2 cursor-pointer">Reels</button>
-      <button type="button" onclick="switchTab('groups')" id="tab-groups" class="pb-2 px-2 cursor-pointer">Groups</button>
-      <button type="button" onclick="switchTab('profile')" id="tab-profile" class="pb-2 px-2 cursor-pointer">Profile</button>
+    <nav class="bg-white border-b border-neutral-200/70 flex justify-around px-1 pt-2.5 pb-1 text-[11px] font-bold text-neutral-400 sticky top-[61px] z-30">
+      <button type="button" onclick="switchTab('explore')" id="tab-explore" class="pb-2 px-1.5 cursor-pointer">Explore</button>
+      <button type="button" onclick="switchTab('reels')" id="tab-reels" class="pb-2 px-1.5 cursor-pointer">Reels</button>
+      <button type="button" onclick="switchTab('shops')" id="tab-shops" class="pb-2 px-1.5 cursor-pointer">Shops</button>
+      <button type="button" onclick="switchTab('notices')" id="tab-notices" class="pb-2 px-1.5 cursor-pointer">Notices</button>
+      <button type="button" onclick="switchTab('groups')" id="tab-groups" class="pb-2 px-1.5 cursor-pointer">Groups</button>
+      <button type="button" onclick="switchTab('profile')" id="tab-profile" class="pb-2 px-1.5 cursor-pointer">Profile</button>
     </nav>
 
     <main class="p-4 flex flex-col gap-4">
@@ -331,13 +332,113 @@
       <!-- EXPLORE SECTION -->
       <section id="section-explore" class="flex flex-col gap-3">
         <div class="flex items-center justify-between">
-          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Personalized Local Feed</h3>
-          <div class="flex gap-1.5">
-            <button type="button" onclick="setFeedTab('Reels')" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-neutral-900 text-white cursor-pointer">Reels</button>
-            <button type="button" onclick="setFeedTab('Feed')" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-neutral-100 text-neutral-700 hover:bg-neutral-200 cursor-pointer">Feed</button>
-          </div>
+          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Map Registered Places in Indore</h3>
+          <span id="shopsCountBadge" class="text-[11px] font-bold text-pink-600"></span>
         </div>
+        <div id="exploreShopsPreview" class="flex flex-col gap-3"></div>
         <div id="feedContainer" class="flex flex-col gap-3"></div>
+      </section>
+
+      <!-- REELS SECTION (CREATE REEL + SHORT VIDEO FEED) -->
+      <section id="section-reels" class="hidden flex-col gap-4">
+        <form id="createReelForm" onsubmit="createReel(event)" class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-2.5">
+          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Post a Reel</h3>
+          <input
+            type="text"
+            id="reelTitle"
+            placeholder="Reel caption or title (e.g., Rau cafe evening vibe)"
+            class="w-full px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
+          />
+          <div class="grid grid-cols-2 gap-2">
+            <select
+              id="reelCategory"
+              class="px-2.5 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-semibold text-neutral-700"
+            >
+              <option value="Cafe">Cafes & Food</option>
+              <option value="Construction">Construction</option>
+              <option value="Sports">Sports & Football</option>
+              <option value="Market">Market & Errands</option>
+              <option value="Entertainment">Entertainment</option>
+              <option value="Stationery">Stationery</option>
+            </select>
+            <input
+              type="text"
+              id="reelArea"
+              value="Indore"
+              placeholder="Location in Indore"
+              class="px-2.5 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium"
+            />
+          </div>
+          <input
+            type="url"
+            id="reelVideoUrl"
+            placeholder="Video URL (.mp4 link — optional, sample video used if blank)"
+            class="w-full px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
+          />
+          <button
+            type="submit"
+            class="w-full ig-gradient text-white py-2.5 rounded-xl text-xs font-bold hover:opacity-95 transition cursor-pointer"
+          >
+            Publish Reel
+          </button>
+        </form>
+
+        <div id="reelsTabContainer" class="flex flex-col gap-4"></div>
+      </section>
+
+      <!-- SHOPS SECTION (LIVE MAP PLACES + ₹99/MONTH PRIORITY LISTING CONTACT) -->
+      <section id="section-shops" class="hidden flex-col gap-4">
+        <div class="bg-white p-4 rounded-2xl border border-pink-200 flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-pink-50 text-pink-600 border border-pink-200">
+              Shop Listing • ₹99/month
+            </span>
+            <span class="text-xs font-bold text-neutral-800">+91 9131484821</span>
+          </div>
+          <h3 class="text-sm font-black text-neutral-900">List Your Shop in Indore</h3>
+          <p class="text-xs text-neutral-600">
+            Get featured in Indore local search with our <strong>₹99/month</strong> priority listing plan. Contact directly on WhatsApp or submit your shop details below.
+          </p>
+          <a
+            href="https://wa.me/919131484821?text=Hi%2C%20I%20want%20to%20list%20my%20shop%20on%20AroundU%20Indore%20(%E2%82%B999%2Fmonth%20plan)."
+            target="_blank"
+            rel="noopener noreferrer"
+            class="w-full text-center ig-gradient text-white py-2.5 rounded-xl text-xs font-bold hover:opacity-95 transition"
+          >
+            Contact on WhatsApp (+91 9131484821)
+          </a>
+
+          <form id="shopListingForm" onsubmit="submitShopListingInquiry(event)" class="flex flex-col gap-2 pt-2 border-t border-neutral-100">
+            <input
+              type="text"
+              id="shopInquiryName"
+              placeholder="Shop or Business Name"
+              class="w-full px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
+            />
+            <div class="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                id="shopInquiryArea"
+                placeholder="Area (e.g., Rau, Vijay Nagar)"
+                class="w-full px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium"
+              />
+              <input
+                type="tel"
+                id="shopInquiryPhone"
+                placeholder="Contact Phone"
+                class="w-full px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium"
+              />
+            </div>
+            <button
+              type="submit"
+              class="w-full bg-neutral-900 hover:bg-neutral-800 text-white py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              Request ₹99/month Listing
+            </button>
+          </form>
+        </div>
+
+        <div id="shopsContainer" class="flex flex-col gap-3"></div>
       </section>
 
       <!-- NOTICES SECTION -->
@@ -395,15 +496,6 @@
         <div id="noticesContainer" class="flex flex-col gap-3"></div>
       </section>
 
-      <!-- REELS SECTION -->
-      <section id="section-reels" class="hidden flex-col gap-3">
-        <div class="bg-white p-4 rounded-2xl border border-neutral-200/80">
-          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Indore Reels & Spotlights</h3>
-          <p class="text-[11px] text-neutral-500 mt-0.5">Curated around your selected interests and local areas.</p>
-        </div>
-        <div id="reelsTabContainer" class="flex flex-col gap-3"></div>
-      </section>
-
       <!-- GROUPS SECTION -->
       <section id="section-groups" class="hidden flex-col gap-3">
         <div id="groupsListContainer" class="flex flex-col gap-2"></div>
@@ -435,7 +527,7 @@
           <p id="profileUsernameDisplay" class="text-xs font-semibold text-pink-600"></p>
           <p id="profileCityDisplay" class="text-xs text-neutral-500 mt-0.5"></p>
           <p class="text-[11px] text-neutral-500 mt-2 pt-2 border-t border-neutral-100">
-            Business & Verification Desk: <span id="vendorVerificationPhone" class="font-bold text-neutral-800">+91 9131484821</span>
+            Shop Listing (₹99/month) Contact: <span id="vendorVerificationPhone" class="font-bold text-neutral-800">+91 9131484821</span>
           </p>
         </div>
 
