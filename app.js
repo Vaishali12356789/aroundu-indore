@@ -2,23 +2,29 @@ const SUPABASE_URL = "https://suahnywkmysshkmlqftn.supabase.co";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1YWhueXdrbXlzc2hrbWxxZnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1ODQ2MzgsImV4cCI6MjExMDE2MDYzOH0.c1BfJnNkLvV3vn8NC_qMW4tWFDOCGQVuLlKSkb-zq4M";
 
-const supabaseClient =
-  window.supabase && typeof window.supabase.createClient === "function"
-    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
-    : null;
+// Optional: If you have a billing-enabled Google Maps API key, set it here; otherwise live OpenStreetMap/Overpass data is used.
+const GOOGLE_MAPS_API_KEY = "";
 
+const INDORE_CENTER = { lat: 22.7196, lon: 75.8577 };
 const VERIFICATION_CONTACT_PHONE = "+91 9131484821";
+const SHOP_LISTING_PRICE_INR = 99;
+
 const SESSION_KEY = "aroundu_session";
 const USERS_CACHE_KEY = "aroundu_users_cache";
 const NOTICES_KEY = "aroundu_notices_cache";
 const IM_IN_KEY = "aroundu_im_in_ids";
 const GROUPS_KEY = "aroundu_groups_cache";
 const CHAT_MESSAGES_KEY = "aroundu_chat_messages_cache";
+const REELS_KEY = "aroundu_reels_cache";
+const SHOP_INQUIRIES_KEY = "aroundu_shop_inquiries_cache";
 
 let userSession = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
 let currentSignupStep = 1;
 let selectedSignupInterests = [];
 let editSelectedInterests = [];
+
+let liveMapPlaces = [];
+let isLoadingMapPlaces = false;
 
 let localNoticesList = JSON.parse(localStorage.getItem(NOTICES_KEY) || "[]");
 let joinedNoticeIds = JSON.parse(localStorage.getItem(IM_IN_KEY) || "[]");
@@ -26,6 +32,9 @@ let currentNoticeFilter = "All";
 let currentRadius = 10;
 let currentCategory = "All";
 let currentFeedTab = "Reels";
+
+let userReelsList = JSON.parse(localStorage.getItem(REELS_KEY) || "[]");
+let shopInquiriesList = JSON.parse(localStorage.getItem(SHOP_INQUIRIES_KEY) || "[]");
 
 let communitiesList = JSON.parse(localStorage.getItem(GROUPS_KEY) || "[]");
 let chatMessagesMap = JSON.parse(localStorage.getItem(CHAT_MESSAGES_KEY) || "{}");
@@ -71,24 +80,30 @@ const SAMPLE_REELS = [
     title: "Best Cold Coffee & Study Corners in Indore",
     tag: "Cafe",
     location: "Vijay Nagar, Indore",
+    distance_km: 4.5,
     creator: "@indore_foodie",
-    summary: "Quick neighborhood spots for evening hangouts and quiet work."
+    summary: "Quick neighborhood spots for evening hangouts and quiet work.",
+    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
   },
   {
     id: "reel-2",
     title: "Home Renovation & Site Planning Checklist",
     tag: "Construction",
-    location: "AB Road, Indore",
+    location: "Silicon City / AB Road, Indore",
+    distance_km: 2.4,
     creator: "@3art_indore",
-    summary: "Essential steps before starting residential or commercial work."
+    summary: "Essential steps before starting residential or commercial work.",
+    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
   },
   {
     id: "reel-3",
     title: "Weekend Turf & Running Track Meetup",
     tag: "Sports",
     location: "Rau, Indore",
+    distance_km: 5.8,
     creator: "@indore_sports",
-    summary: "Join local players within your 10 km circle."
+    summary: "Join local players within your 10 km circle.",
+    videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
   }
 ];
 
@@ -130,6 +145,103 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function mapOsmTagsToCategory(tags = {}) {
+  const amenity = String(tags.amenity || "").toLowerCase();
+  const shop = String(tags.shop || "").toLowerCase();
+  const craft = String(tags.craft || "").toLowerCase();
+  const leisure = String(tags.leisure || "").toLowerCase();
+
+  if (["cafe", "restaurant", "fast_food", "food_court", "bakery"].includes(amenity) || ["bakery", "coffee", "confectionery"].includes(shop)) {
+    return "Cafe";
+  }
+  if (["sports_centre", "stadium", "pitch"].includes(leisure) || ["sports"].includes(shop)) {
+    return "Sports";
+  }
+  if (["stationery", "books", "copyshop"].includes(shop)) {
+    return "Stationery";
+  }
+  if (["builder", "architect", "carpenter", "plumber", "electrician"].includes(craft) || ["hardware", "building_materials"].includes(shop)) {
+    return "Construction";
+  }
+  if (["cinema", "theatre", "arts_centre"].includes(amenity)) {
+    return "Entertainment";
+  }
+  return "Market";
+}
+
+async function fetchLiveMapPlaces(radiusKm = currentRadius) {
+  isLoadingMapPlaces = true;
+  renderShops();
+
+  const radiusMeters = Math.max(1000, Math.min(25000, Number(radiusKm || 10) * 1000));
+  const query = `
+    [out:json][timeout:15];
+    (
+      node["name"]["shop"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+      node["name"]["amenity"~"cafe|restaurant|fast_food|cinema"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+      node["name"]["craft"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+      way["name"]["shop"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+    );
+    out center 40;
+  `;
+
+  try {
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: query
+    });
+    if (!res.ok) throw new Error(`Map API HTTP ${res.status}`);
+    const json = await res.json();
+    const elements = Array.isArray(json.elements) ? json.elements : [];
+
+    liveMapPlaces = elements
+      .map((el, idx) => {
+        const lat = el.lat ?? el.center?.lat;
+        const lon = el.lon ?? el.center?.lon;
+        const tags = el.tags || {};
+        const name = String(tags.name || "").trim();
+        if (!name || typeof lat !== "number" || typeof lon !== "number") return null;
+
+        const dist = calculateDistanceKm(INDORE_CENTER.lat, INDORE_CENTER.lon, lat, lon);
+        const addr =
+          tags["addr:suburb"] ||
+          tags["addr:neighbourhood"] ||
+          tags["addr:street"] ||
+          "Indore, MP";
+
+        return {
+          id: `osm-${el.id || idx}`,
+          name,
+          category: mapOsmTagsToCategory(tags),
+          area: String(addr),
+          distance_km: Number(dist.toFixed(1)),
+          source: "Map Registered",
+          tagline: tags.description || tags.shop || tags.amenity || tags.craft || "Registered place on Indore map"
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.distance_km - b.distance_km);
+  } catch (err) {
+    console.warn("Live map fetch warning:", err.message);
+    liveMapPlaces = [];
+  } finally {
+    isLoadingMapPlaces = false;
+    renderShops();
+  }
 }
 
 function switchAuthMode(mode = "login") {
@@ -497,7 +609,7 @@ function handleLogout() {
 }
 
 function switchTab(tabName) {
-  const sections = ["explore", "notices", "reels", "groups", "profile"];
+  const sections = ["explore", "reels", "shops", "notices", "groups", "profile"];
   sections.forEach((sec) => {
     const panel = document.getElementById(`section-${sec}`);
     const tabBtn = document.getElementById(`tab-${sec}`);
@@ -535,6 +647,149 @@ function syncProfileUI() {
 
   editSelectedInterests = Array.isArray(userSession.interests) ? [...userSession.interests] : [];
   renderInterestButtons("edit");
+}
+
+function renderShops() {
+  const container = document.getElementById("shopsContainer");
+  const preview = document.getElementById("exploreShopsPreview");
+  const badge = document.getElementById("shopsCountBadge");
+
+  if (isLoadingMapPlaces) {
+    const loadingHtml = `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">Fetching registered places on Indore map within ${escapeHtml(currentRadius)} km...</p>`;
+    if (container) container.innerHTML = loadingHtml;
+    if (preview) preview.innerHTML = loadingHtml;
+    return;
+  }
+
+  const filteredShops = liveMapPlaces.filter((shop) => {
+    const withinRadius = Number(shop.distance_km ?? 2) <= Number(currentRadius || 10);
+    const matchesCategory =
+      currentCategory === "All" ||
+      String(shop.category || "").toLowerCase() === String(currentCategory).toLowerCase();
+    return withinRadius && matchesCategory;
+  });
+
+  if (badge) {
+    badge.textContent = `${filteredShops.length} within ${currentRadius} km`;
+  }
+
+  const cardsHtml = filteredShops.length
+    ? filteredShops
+        .map(
+          (shop) => `
+            <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-1.5 card-pop">
+              <div class="flex items-center justify-between text-[10px] font-bold">
+                <span class="text-pink-600 uppercase">${escapeHtml(shop.category)} • ${escapeHtml(shop.source)}</span>
+                <span class="text-neutral-500">${Number(shop.distance_km).toFixed(1)} km</span>
+              </div>
+              <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(shop.name)}</h4>
+              <p class="text-xs text-neutral-600">${escapeHtml(shop.tagline)}</p>
+              <span class="text-[11px] font-medium text-neutral-400">${escapeHtml(shop.area)}</span>
+            </div>
+          `
+        )
+        .join("")
+    : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No registered map places found within ${escapeHtml(currentRadius)} km for this filter. Try increasing the radius or switching category to All.</p>`;
+
+  if (container) container.innerHTML = cardsHtml;
+  if (preview) preview.innerHTML = cardsHtml;
+}
+
+async function submitShopListingInquiry(event) {
+  if (event) event.preventDefault();
+
+  const shopName = String(document.getElementById("shopInquiryName")?.value || "").trim();
+  const area = String(document.getElementById("shopInquiryArea")?.value || "Indore").trim();
+  const phone = String(document.getElementById("shopInquiryPhone")?.value || "").trim();
+
+  if (!shopName || !phone) {
+    alert("Please enter your shop name and contact phone number.");
+    return;
+  }
+
+  const inquiry = {
+    id: `shop-inq-${Date.now()}`,
+    shop_name: shopName,
+    area,
+    phone,
+    plan_inr: SHOP_LISTING_PRICE_INR,
+    submitted_by: userSession?.username || "guest",
+    created_at: new Date().toISOString()
+  };
+
+  shopInquiriesList = [inquiry, ...shopInquiriesList];
+  localStorage.setItem(SHOP_INQUIRIES_KEY, JSON.stringify(shopInquiriesList));
+
+  if (supabaseClient) {
+    const { error } = await supabaseClient.from("shop_listing_inquiries").insert([inquiry]);
+    if (error) console.warn("Supabase shop inquiry warning:", error.message);
+  }
+
+  const nameEl = document.getElementById("shopInquiryName");
+  const areaEl = document.getElementById("shopInquiryArea");
+  const phoneEl = document.getElementById("shopInquiryPhone");
+  if (nameEl) nameEl.value = "";
+  if (areaEl) areaEl.value = "";
+  if (phoneEl) phoneEl.value = "";
+
+  alert(
+    `Request received for "${shopName}" (₹${SHOP_LISTING_PRICE_INR}/month plan). You can also call or WhatsApp ${VERIFICATION_CONTACT_PHONE} directly.`
+  );
+}
+
+async function createReel(event) {
+  if (event) event.preventDefault();
+
+  const title = String(document.getElementById("reelTitle")?.value || "").trim();
+  const tag = String(document.getElementById("reelCategory")?.value || "Cafe").trim();
+  const location = String(document.getElementById("reelArea")?.value || "Indore").trim();
+  const videoUrlRaw = String(document.getElementById("reelVideoUrl")?.value || "").trim();
+
+  if (!title) {
+    alert("Please enter a reel title or caption.");
+    return;
+  }
+
+  const creatorHandle = userSession?.username ? `@${userSession.username}` : "@indore_creator";
+  const newReel = {
+    id: `reel-${Date.now()}`,
+    title,
+    tag,
+    location,
+    distance_km: 2.0,
+    creator: creatorHandle,
+    summary: `Posted by ${userSession?.full_name || "AroundU Member"} in ${location}.`,
+    videoUrl:
+      videoUrlRaw ||
+      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+  };
+
+  userReelsList = [newReel, ...userReelsList];
+  localStorage.setItem(REELS_KEY, JSON.stringify(userReelsList));
+
+  if (supabaseClient) {
+    const { error } = await supabaseClient.from("reels").insert([newReel]);
+    if (error) console.warn("Supabase reels sync warning:", error.message);
+  }
+
+  const titleEl = document.getElementById("reelTitle");
+  const urlEl = document.getElementById("reelVideoUrl");
+  if (titleEl) titleEl.value = "";
+  if (urlEl) urlEl.value = "";
+
+  renderFeedOrReels();
+}
+
+function toggleReelPlay(videoId, btnEl) {
+  const vid = document.getElementById(videoId);
+  if (!vid) return;
+  if (vid.paused) {
+    vid.play().catch(() => {});
+    if (btnEl) btnEl.textContent = "Pause";
+  } else {
+    vid.pause();
+    if (btnEl) btnEl.textContent = "Play";
+  }
 }
 
 function setFeedTab(tabName) {
@@ -662,31 +917,78 @@ function renderFeedOrReels() {
   const container = document.getElementById("feedContainer");
   const reelsContainer = document.getElementById("reelsTabContainer");
 
+  const combinedReels = [...userReelsList, ...SAMPLE_REELS];
   const interests = Array.isArray(userSession?.interests) ? userSession.interests : [];
-  const filtered = SAMPLE_REELS.filter(
-    (item) => currentCategory === "All" || item.tag === currentCategory
-  );
-  const sorted = filtered.sort((a, b) => {
-    const aMatch = interests.includes(a.tag) ? 1 : 0;
-    const bMatch = interests.includes(b.tag) ? 1 : 0;
-    return bMatch - aMatch;
-  });
 
-  const html = sorted
-    .map(
-      (item) => `
-        <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-1.5 card-pop">
-          <span class="text-[10px] font-bold text-pink-600 uppercase">${escapeHtml(item.tag)} • ${escapeHtml(currentFeedTab)}</span>
-          <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(item.title)}</h4>
-          <p class="text-xs text-neutral-600">${escapeHtml(item.summary)}</p>
-          <small class="text-[11px] text-neutral-400">${escapeHtml(item.creator)} • ${escapeHtml(item.location)}</small>
-        </div>
-      `
-    )
-    .join("");
+  const filtered = combinedReels
+    .filter((item) => {
+      const withinRadius = Number(item.distance_km ?? 3) <= Number(currentRadius || 10);
+      const matchesCategory =
+        currentCategory === "All" ||
+        String(item.tag || "").toLowerCase() === String(currentCategory).toLowerCase();
+      return withinRadius && matchesCategory;
+    })
+    .sort((a, b) => {
+      const aMatch = interests.includes(a.tag) ? 1 : 0;
+      const bMatch = interests.includes(b.tag) ? 1 : 0;
+      return bMatch - aMatch;
+    });
 
-  if (container) container.innerHTML = html;
-  if (reelsContainer) reelsContainer.innerHTML = html;
+  if (reelsContainer) {
+    reelsContainer.innerHTML = filtered.length
+      ? filtered
+          .map(
+            (item, idx) => `
+              <div class="bg-neutral-950 text-white rounded-3xl overflow-hidden border border-neutral-800 shadow-lg flex flex-col">
+                <div class="relative bg-black aspect-[9/12] w-full flex items-center justify-center">
+                  <video
+                    id="reel-player-${idx}"
+                    src="${escapeHtml(item.videoUrl)}"
+                    class="w-full h-full object-cover"
+                    playsinline
+                    muted
+                    loop
+                    controls
+                  ></video>
+                  <span class="absolute top-3 left-3 text-[10px] font-bold px-2.5 py-1 rounded-full bg-black/65 text-white">
+                    ${escapeHtml(item.tag)} • ${Number(item.distance_km ?? 2).toFixed(1)} km
+                  </span>
+                </div>
+                <div class="p-3.5 flex flex-col gap-1.5 bg-neutral-900">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-bold text-pink-400">${escapeHtml(item.creator)}</span>
+                    <button
+                      type="button"
+                      onclick="toggleReelPlay('reel-player-${idx}', this)"
+                      class="px-3 py-1 rounded-full text-[11px] font-bold bg-white/15 hover:bg-white/25 text-white cursor-pointer"
+                    >
+                      Play
+                    </button>
+                  </div>
+                  <h4 class="text-xs font-bold text-white">${escapeHtml(item.title)}</h4>
+                  <p class="text-[11px] text-neutral-400">${escapeHtml(item.location)}</p>
+                </div>
+              </div>
+            `
+          )
+          .join("")
+      : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No reels within ${escapeHtml(currentRadius)} km for this filter.</p>`;
+  }
+
+  if (container) {
+    container.innerHTML = filtered
+      .map(
+        (item) => `
+          <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-1.5 card-pop">
+            <span class="text-[10px] font-bold text-pink-600 uppercase">${escapeHtml(item.tag)} • ${escapeHtml(currentFeedTab)}</span>
+            <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(item.title)}</h4>
+            <p class="text-xs text-neutral-600">${escapeHtml(item.summary || "")}</p>
+            <small class="text-[11px] text-neutral-400">${escapeHtml(item.creator)} • ${escapeHtml(item.location)}</small>
+          </div>
+        `
+      )
+      .join("");
+  }
 }
 
 function initGroups() {
@@ -802,6 +1104,7 @@ function enterMainApp() {
   if (radiusLabel) radiusLabel.textContent = `${currentRadius} km Radius`;
 
   syncProfileUI();
+  fetchLiveMapPlaces(currentRadius);
   renderNotices();
   renderFeedOrReels();
   initGroups();
@@ -820,7 +1123,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (radiusLabel) radiusLabel.textContent = `${currentRadius} km`;
       const headerLabel = document.getElementById("header-radius-label");
       if (headerLabel) headerLabel.textContent = `${currentRadius} km Radius`;
+      renderShops();
       renderNotices();
+      renderFeedOrReels();
+    });
+    radiusInput.addEventListener("change", (e) => {
+      currentRadius = Number(e.target.value || 10);
+      fetchLiveMapPlaces(currentRadius);
     });
   }
 
@@ -828,6 +1137,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (categorySelect) {
     categorySelect.addEventListener("change", (e) => {
       currentCategory = e.target.value || "All";
+      renderShops();
       renderNotices();
       renderFeedOrReels();
     });
