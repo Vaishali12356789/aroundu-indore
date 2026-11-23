@@ -36,7 +36,7 @@ let currentSignupStep = 1;
 let selectedSignupInterests = [];
 let editSelectedInterests = [];
 
-let generatedOtpCode = "";
+let otpSentToEmail = "";
 let isOtpVerified = false;
 
 let liveMapPlaces = [];
@@ -161,53 +161,129 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
-function sendSignupOtp() {
-  const email = String(document.getElementById("reg-email")?.value || "").trim().toLowerCase();
+async function sendSignupOtp() {
+  const email = String(document.getElementById("reg-email")?.value || "")
+    .trim()
+    .toLowerCase();
+
   if (!isValidEmail(email)) {
     alert("Please enter a valid email address first.");
     return;
   }
-  generatedOtpCode = String(Math.floor(100000 + Math.random() * 900000));
+
+  const sb = getSupabase();
+  if (!sb || !sb.auth) {
+    alert("Supabase Auth is not available. Please check script loading.");
+    return;
+  }
+
   isOtpVerified = false;
+  otpSentToEmail = "";
 
   const badge = document.getElementById("otp-badge");
   const statusEl = document.getElementById("otp-status-text");
   const inputEl = document.getElementById("reg-otp-input");
 
   if (badge) {
-    badge.textContent = "OTP Sent";
-    badge.className = "text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300";
+    badge.textContent = "Sending...";
+    badge.className =
+      "text-[10px] font-black px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-700 border border-neutral-300";
   }
   if (statusEl) {
-    statusEl.textContent = `Demo OTP for ${email}: ${generatedOtpCode}`;
+    statusEl.textContent = `Sending 6-digit OTP to ${email}...`;
+  }
+
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: true
+    }
+  });
+
+  if (error) {
+    if (badge) {
+      badge.textContent = "Error";
+      badge.className =
+        "text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-300";
+    }
+    if (statusEl) {
+      statusEl.textContent = `Could not send OTP: ${error.message}`;
+    }
+    alert(`OTP send failed: ${error.message}`);
+    return;
+  }
+
+  otpSentToEmail = email;
+  if (badge) {
+    badge.textContent = "OTP Sent";
+    badge.className =
+      "text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300";
+  }
+  if (statusEl) {
+    statusEl.textContent = `OTP sent to ${email}. Check Inbox or Spam folder.`;
   }
   if (inputEl) {
-    inputEl.value = generatedOtpCode;
+    inputEl.value = "";
     inputEl.focus();
   }
 }
 
-function verifySignupOtp() {
-  const entered = String(document.getElementById("reg-otp-input")?.value || "").trim();
-  if (!generatedOtpCode) {
-    alert("Click 'Send OTP' first.");
+async function verifySignupOtp() {
+  const email = String(document.getElementById("reg-email")?.value || "")
+    .trim()
+    .toLowerCase();
+  const token = String(document.getElementById("reg-otp-input")?.value || "").trim();
+
+  if (!isValidEmail(email)) {
+    alert("Please enter a valid email address.");
     return;
   }
-  if (entered !== generatedOtpCode) {
+  if (!otpSentToEmail || otpSentToEmail !== email) {
+    alert("Click 'Send OTP' for this email address first.");
+    return;
+  }
+  if (!/^\d{6}$/.test(token)) {
+    alert("Please enter the 6-digit OTP sent to your email.");
+    return;
+  }
+
+  const sb = getSupabase();
+  if (!sb || !sb.auth) {
+    alert("Supabase Auth is not available. Please check script loading.");
+    return;
+  }
+
+  const badge = document.getElementById("otp-badge");
+  const statusEl = document.getElementById("otp-status-text");
+
+  const { data, error } = await sb.auth.verifyOtp({
+    email,
+    token,
+    type: "email"
+  });
+
+  if (error || !data?.session) {
     isOtpVerified = false;
-    alert("Incorrect OTP. Please check and try again.");
+    if (badge) {
+      badge.textContent = "Invalid";
+      badge.className =
+        "text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-300";
+    }
+    if (statusEl) {
+      statusEl.textContent = error?.message || "Invalid or expired OTP.";
+    }
+    alert(error?.message || "Invalid or expired OTP. Please try again.");
     return;
   }
 
   isOtpVerified = true;
-  const badge = document.getElementById("otp-badge");
-  const statusEl = document.getElementById("otp-status-text");
   if (badge) {
     badge.textContent = "Verified ✓";
-    badge.className = "text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300";
+    badge.className =
+      "text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300";
   }
   if (statusEl) {
-    statusEl.textContent = "OTP verified successfully.";
+    statusEl.textContent = "Email OTP verified successfully.";
   }
 }
 
@@ -228,7 +304,10 @@ function mapOsmTagsToCategory(tags = {}) {
   const craft = String(tags.craft || "").toLowerCase();
   const leisure = String(tags.leisure || "").toLowerCase();
 
-  if (["cafe", "restaurant", "fast_food", "food_court", "bakery"].includes(amenity) || ["bakery", "coffee", "confectionery"].includes(shop)) {
+  if (
+    ["cafe", "restaurant", "fast_food", "food_court", "bakery"].includes(amenity) ||
+    ["bakery", "coffee", "confectionery"].includes(shop)
+  ) {
     return "Cafe";
   }
   if (["sports_centre", "stadium", "pitch"].includes(leisure) || ["sports"].includes(shop)) {
@@ -237,7 +316,10 @@ function mapOsmTagsToCategory(tags = {}) {
   if (["stationery", "books", "copyshop"].includes(shop)) {
     return "Stationery";
   }
-  if (["builder", "architect", "carpenter", "plumber", "electrician"].includes(craft) || ["hardware", "building_materials"].includes(shop)) {
+  if (
+    ["builder", "architect", "carpenter", "plumber", "electrician"].includes(craft) ||
+    ["hardware", "building_materials"].includes(shop)
+  ) {
     return "Construction";
   }
   if (["cinema", "theatre", "arts_centre"].includes(amenity)) {
@@ -294,7 +376,12 @@ async function fetchLiveMapPlaces(radiusKm = currentRadius) {
           area: String(addr),
           distance_km: Number(dist.toFixed(1)),
           source: "Map Registered",
-          tagline: tags.description || tags.shop || tags.amenity || tags.craft || "Registered place on Indore map"
+          tagline:
+            tags.description ||
+            tags.shop ||
+            tags.amenity ||
+            tags.craft ||
+            "Registered place on Indore map"
         };
       })
       .filter(Boolean)
@@ -337,7 +424,9 @@ function switchAuthMode(mode = "login") {
 function goToSignupStep(step) {
   if (step > 1) {
     const fullName = String(document.getElementById("reg-name")?.value || "").trim();
-    const email = String(document.getElementById("reg-email")?.value || "").trim().toLowerCase();
+    const email = String(document.getElementById("reg-email")?.value || "")
+      .trim()
+      .toLowerCase();
     const password = String(document.getElementById("reg-password")?.value || "");
 
     if (!fullName) {
@@ -348,7 +437,7 @@ function goToSignupStep(step) {
       alert("Please enter a valid email address.");
       return;
     }
-    if (!isOtpVerified) {
+    if (!isOtpVerified || otpSentToEmail !== email) {
       alert("Please send and verify your OTP first.");
       return;
     }
@@ -421,7 +510,11 @@ async function handleLogin(event) {
     if (byEmail.data && byEmail.data.length) {
       matchedUser = byEmail.data[0];
     } else if (cleanHandle) {
-      const byUsername = await sb.from("profiles").select("*").ilike("username", cleanHandle).limit(1);
+      const byUsername = await sb
+        .from("profiles")
+        .select("*")
+        .ilike("username", cleanHandle)
+        .limit(1);
       if (byUsername.data && byUsername.data.length) {
         matchedUser = byUsername.data[0];
       }
@@ -517,7 +610,7 @@ async function completeOnboarding(event) {
 
   if (usernameEl) usernameEl.value = username;
 
-  if (!fullName || !isValidEmail(email) || !isOtpVerified || password.length < 6) {
+  if (!fullName || !isValidEmail(email) || !isOtpVerified || otpSentToEmail !== email || password.length < 6) {
     goToSignupStep(1);
     alert("Please complete Step 1, verify OTP, and enter a 6+ character password.");
     return;
@@ -664,7 +757,7 @@ function handleLogout() {
   userSession = null;
   currentSignupStep = 1;
   isOtpVerified = false;
-  generatedOtpCode = "";
+  otpSentToEmail = "";
   const authScreen = document.getElementById("auth-screen");
   const dashboard = document.getElementById("app-dashboard");
   if (dashboard) dashboard.classList.add("hidden");
@@ -816,7 +909,9 @@ async function createReel(event) {
     return;
   }
 
-  let videoSrc = urlRaw || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+  let videoSrc =
+    urlRaw ||
+    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
   if (fileEl && fileEl.files && fileEl.files[0]) {
     videoSrc = URL.createObjectURL(fileEl.files[0]);
   }
@@ -834,7 +929,10 @@ async function createReel(event) {
 
   userReelsList = [newReel, ...userReelsList];
   try {
-    localStorage.setItem(REELS_KEY, JSON.stringify(userReelsList.filter((r) => !String(r.videoUrl).startsWith("blob:"))));
+    localStorage.setItem(
+      REELS_KEY,
+      JSON.stringify(userReelsList.filter((r) => !String(r.videoUrl).startsWith("blob:")))
+    );
   } catch (_) {}
 
   const sb = getSupabase();
@@ -849,7 +947,9 @@ async function createReel(event) {
   if (urlEl) urlEl.value = "";
   if (fileEl) fileEl.value = "";
 
-  renderFeedOrReels();
+  if (typeof renderFeedOrReels === "function") {
+    renderFeedOrReels();
+  }
 }
 
 function toggleReelPlay(videoId, btnEl) {
@@ -866,12 +966,16 @@ function toggleReelPlay(videoId, btnEl) {
 
 function setFeedTab(tabName) {
   currentFeedTab = tabName;
-  renderFeedOrReels();
+  if (typeof renderFeedOrReels === "function") {
+    renderFeedOrReels();
+  }
 }
 
 function setNoticeFilter(filterName) {
   currentNoticeFilter = filterName;
-  renderNotices();
+  if (typeof renderNotices === "function") {
+    renderNotices();
+  }
 }
 
 function getActiveNotices() {
@@ -898,7 +1002,10 @@ async function createNotice(event) {
   const title = String(document.getElementById("noticeTitle")?.value || "").trim();
   const category = String(document.getElementById("noticeCategory")?.value || "General").trim();
   const area = String(document.getElementById("noticeArea")?.value || "Indore").trim();
-  const hoursValid = Math.max(1, Number(document.getElementById("noticeExpiryHours")?.value || 12));
+  const hoursValid = Math.max(
+    1,
+    Number(document.getElementById("noticeExpiryHours")?.value || 12)
+  );
 
   if (!title) {
     alert("Please enter a notice title.");
@@ -932,381 +1039,11 @@ async function createNotice(event) {
   }
 
   const titleEl = document.getElementById("noticeTitle");
+  const areaEl = document.getElementById("noticeArea");
   if (titleEl) titleEl.value = "";
-  renderNotices();
-}
+  if (areaEl) areaEl.value = "";
 
-async function toggleImIn(noticeId) {
-  const baseList = localNoticesList.length ? localNoticesList : [...SAMPLE_NOTICES];
-  const alreadyJoined = joinedNoticeIds.includes(noticeId);
-
-  if (alreadyJoined) {
-    joinedNoticeIds = joinedNoticeIds.filter((id) => id !== noticeId);
-  } else {
-    joinedNoticeIds.push(noticeId);
-  }
-
-  localNoticesList = baseList.map((n) => {
-    if (n.id !== noticeId) return n;
-    const nextCount = Math.max(0, Number(n.im_in_count || 0) + (alreadyJoined ? -1 : 1));
-    return { ...n, im_in_count: nextCount };
-  });
-
-  localStorage.setItem(IM_IN_KEY, JSON.stringify(joinedNoticeIds));
-  localStorage.setItem(NOTICES_KEY, JSON.stringify(localNoticesList));
-  renderNotices();
-}
-
-function renderNotices() {
-  const container = document.getElementById("noticesContainer");
-  if (!container) return;
-
-  const list = getActiveNotices();
-  if (!list.length) {
-    container.innerHTML = `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No active notices match the current filter or radius.</p>`;
-    return;
-  }
-
-  container.innerHTML = list
-    .map((n) => {
-      const joined = joinedNoticeIds.includes(n.id);
-      return `
-        <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-2 card-pop">
-          <div class="text-[11px] text-neutral-500 font-semibold">
-            <span>${escapeHtml(n.category)}</span> • <span>${escapeHtml(n.area)}</span>
-          </div>
-          <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(n.title)}</h4>
-          <p class="text-[11px] text-neutral-500">Posted by ${escapeHtml(n.author_name)} • ${Number(n.distance_km || 2).toFixed(1)} km</p>
-          <button type="button" onclick="toggleImIn('${escapeHtml(n.id)}')" class="self-start px-3 py-1.5 rounded-xl text-xs font-bold ${joined ? "bg-pink-600 text-white" : "bg-neutral-100 hover:bg-neutral-200 text-neutral-800"} cursor-pointer">
-            ${joined ? "I'm In ✓" : "I'm In"} (${Number(n.im_in_count || 0)})
-          </button>
-        </div>
-      `;
-    })
-    .join("");
-}
-
-function renderFeedOrReels() {
-  const container = document.getElementById("feedContainer");
-  const reelsContainer = document.getElementById("reelsTabContainer");
-
-  const combinedReels = [...userReelsList, ...SAMPLE_REELS];
-  const interests = Array.isArray(userSession?.interests) ? userSession.interests : [];
-
-  const filtered = combinedReels
-    .filter((item) => {
-      const withinRadius = Number(item.distance_km ?? 3) <= Number(currentRadius || 10);
-      const matchesCategory =
-        currentCategory === "All" ||
-        String(item.tag || "").toLowerCase() === String(currentCategory).toLowerCase();
-      return withinRadius && matchesCategory;
-    })
-    .sort((a, b) => {
-      const aMatch = interests.includes(a.tag) ? 1 : 0;
-      const bMatch = interests.includes(b.tag) ? 1 : 0;
-      return bMatch - aMatch;
-    });
-
-  if (reelsContainer) {
-    reelsContainer.innerHTML = filtered.length
-      ? filtered
-          .map(
-            (item, idx) => `
-              <div class="bg-neutral-950 text-white rounded-3xl overflow-hidden border border-neutral-800 shadow-lg flex flex-col">
-                <div class="relative bg-black aspect-[9/12] w-full flex items-center justify-center">
-                  <video
-                    id="reel-player-${idx}"
-                    src="${escapeHtml(item.videoUrl)}"
-                    class="w-full h-full object-cover"
-                    playsinline
-                    muted
-                    loop
-                    controls
-                  ></video>
-                  <span class="absolute top-3 left-3 text-[10px] font-bold px-2.5 py-1 rounded-full bg-black/65 text-white">
-                    ${escapeHtml(item.tag)} • ${Number(item.distance_km ?? 2).toFixed(1)} km
-                  </span>
-                </div>
-                <div class="p-3.5 flex flex-col gap-1.5 bg-neutral-900">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-xs font-bold text-pink-400">${escapeHtml(item.creator)}</span>
-                    <button
-                      type="button"
-                      onclick="toggleReelPlay('reel-player-${idx}', this)"
-                      class="px-3 py-1 rounded-full text-[11px] font-bold bg-white/15 hover:bg-white/25 text-white cursor-pointer"
-                    >
-                      Play
-                    </button>
-                  </div>
-                  <h4 class="text-xs font-bold text-white">${escapeHtml(item.title)}</h4>
-                  <p class="text-[11px] text-neutral-400">${escapeHtml(item.location)}</p>
-                </div>
-              </div>
-            `
-          )
-          .join("")
-      : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No reels within ${escapeHtml(currentRadius)} km for this filter.</p>`;
-  }
-
-  if (container) {
-    container.innerHTML = filtered
-      .map(
-        (item) => `
-          <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-1.5 card-pop">
-            <span class="text-[10px] font-bold text-pink-600 uppercase">${escapeHtml(item.tag)} • ${escapeHtml(currentFeedTab)}</span>
-            <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(item.title)}</h4>
-            <small class="text-[11px] text-neutral-400">${escapeHtml(item.creator)} • ${escapeHtml(item.location)}</small>
-          </div>
-        `
-      )
-      .join("");
+  if (typeof renderNotices === "function") {
+    renderNotices();
   }
 }
-
-function initGroups() {
-  if (!communitiesList.length) {
-    communitiesList = [...SAMPLE_GROUPS];
-    localStorage.setItem(GROUPS_KEY, JSON.stringify(communitiesList));
-  }
-  if (!activeGroupId && communitiesList.length) {
-    activeGroupId = communitiesList[0].id;
-  }
-  renderGroups();
-  renderGroupChat();
-  renderInvitedFriends();
-}
-
-function createNewGroup(event) {
-  if (event) event.preventDefault();
-
-  const name = String(document.getElementById("newGroupName")?.value || "").trim();
-  const area = String(document.getElementById("newGroupArea")?.value || "Indore").trim();
-
-  if (!name) {
-    alert("Please enter a group name.");
-    return;
-  }
-
-  const newGroup = {
-    id: `grp-${Date.now()}`,
-    name,
-    area: area || "Indore"
-  };
-
-  communitiesList = [newGroup, ...communitiesList];
-  localStorage.setItem(GROUPS_KEY, JSON.stringify(communitiesList));
-  activeGroupId = newGroup.id;
-
-  const nameEl = document.getElementById("newGroupName");
-  if (nameEl) nameEl.value = "";
-
-  renderGroups();
-  renderGroupChat();
-}
-
-function renderGroups() {
-  const listEl = document.getElementById("groupsListContainer");
-  const headerEl = document.getElementById("activeChatHeader");
-  if (!listEl) return;
-
-  const activeGroup = communitiesList.find((g) => g.id === activeGroupId);
-  if (headerEl && activeGroup) {
-    headerEl.textContent = `${activeGroup.name} (${activeGroup.area})`;
-  }
-
-  listEl.innerHTML = communitiesList
-    .map((g) => {
-      const isActive = g.id === activeGroupId;
-      return `
-        <button type="button" class="text-left p-3 rounded-xl border ${isActive ? "bg-pink-50 border-pink-300" : "bg-white border-neutral-200/80"} cursor-pointer" onclick="selectGroup('${escapeHtml(g.id)}')">
-          <strong class="block text-xs font-bold text-neutral-900">${escapeHtml(g.name)}</strong>
-          <span class="text-[11px] text-neutral-500">${escapeHtml(g.area)}</span>
-        </button>
-      `;
-    })
-    .join("");
-}
-
-function selectGroup(groupId) {
-  activeGroupId = groupId;
-  renderGroups();
-  renderGroupChat();
-}
-
-function renderGroupChat() {
-  const box = document.getElementById("groupChatMessages");
-  if (!box || !activeGroupId) return;
-
-  const messages = chatMessagesMap[activeGroupId] || [];
-  if (!messages.length) {
-    box.innerHTML = `<p class="text-xs text-neutral-400">Start the conversation in this group.</p>`;
-    return;
-  }
-
-  box.innerHTML = messages
-    .map(
-      (m) => `
-        <div class="mb-2 pb-2 border-b border-neutral-100 last:border-b-0">
-          <strong class="text-xs font-bold text-neutral-800">${escapeHtml(m.sender)}</strong>
-          <p class="text-xs text-neutral-600 mt-0.5">${escapeHtml(m.text)}</p>
-        </div>
-      `
-    )
-    .join("");
-  box.scrollTop = box.scrollHeight;
-}
-
-async function sendGroupMessage(event) {
-  if (event) event.preventDefault();
-  if (!activeGroupId) return;
-
-  const input = document.getElementById("groupChatInput");
-  const text = String(input?.value || "").trim();
-  if (!text) return;
-
-  const sender = userSession?.username
-    ? `${userSession.full_name || "Member"} (@${userSession.username})`
-    : "AroundU Member";
-
-  const existing = chatMessagesMap[activeGroupId] || [];
-  existing.push({
-    id: `msg-${Date.now()}`,
-    sender,
-    text,
-    created_at: new Date().toISOString()
-  });
-
-  chatMessagesMap[activeGroupId] = existing;
-  localStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(chatMessagesMap));
-
-  const sb = getSupabase();
-  if (sb) {
-    const { error } = await sb.from("group_messages").insert([
-      {
-        group_id: activeGroupId,
-        sender_username: userSession?.username || "member",
-        message: text
-      }
-    ]);
-    if (error) console.warn("Supabase chat sync warning:", error.message);
-  }
-
-  if (input) input.value = "";
-  renderGroupChat();
-}
-
-function sendFriendInvite() {
-  const input = document.getElementById("inviteFriendInput");
-  const target = String(input?.value || "").trim();
-  if (!target) {
-    alert("Enter a friend's username, email, or phone number.");
-    return;
-  }
-
-  const invite = {
-    id: `inv-${Date.now()}`,
-    target,
-    invited_by: userSession?.username || "member",
-    created_at: new Date().toISOString()
-  };
-
-  friendInvitesList = [invite, ...friendInvitesList];
-  localStorage.setItem(INVITES_KEY, JSON.stringify(friendInvitesList));
-  if (input) input.value = "";
-  renderInvitedFriends();
-}
-
-function copyInviteLink() {
-  const refCode = userSession?.username || "indore";
-  const shareUrl = `${window.location.origin}/?invite=${encodeURIComponent(refCode)}`;
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(shareUrl).catch(() => {});
-  }
-  alert(`Invite link ready: ${shareUrl}`);
-}
-
-function renderInvitedFriends() {
-  const listEl = document.getElementById("invitedFriendsList");
-  if (!listEl) return;
-
-  if (!friendInvitesList.length) {
-    listEl.innerHTML = "";
-    return;
-  }
-
-  listEl.innerHTML = friendInvitesList
-    .map(
-      (inv) => `
-        <div class="text-[11px] bg-neutral-50 border border-neutral-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between">
-          <span class="font-semibold text-neutral-800">${escapeHtml(inv.target)}</span>
-          <span class="text-pink-600 font-bold">Invited</span>
-        </div>
-      `
-    )
-    .join("");
-}
-
-function startGroupChatPolling() {
-  if (groupChatPollTimer) clearInterval(groupChatPollTimer);
-  groupChatPollTimer = setInterval(() => {
-    renderGroupChat();
-  }, 5000);
-}
-
-function enterMainApp() {
-  const authScreen = document.getElementById("auth-screen");
-  const dashboard = document.getElementById("app-dashboard");
-  if (authScreen) authScreen.classList.add("hidden");
-  if (dashboard) dashboard.classList.remove("hidden");
-
-  const radiusLabel = document.getElementById("header-radius-label");
-  if (radiusLabel) radiusLabel.textContent = `${currentRadius} km Radius`;
-
-  syncProfileUI();
-  fetchLiveMapPlaces(currentRadius);
-  renderNotices();
-  renderFeedOrReels();
-  initGroups();
-  startGroupChatPolling();
-  switchTab("explore");
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  const radiusInput = document.getElementById("radiusSlider");
-  const radiusLabel = document.getElementById("radiusValueDisplay");
-  if (radiusInput) {
-    radiusInput.value = String(currentRadius);
-    if (radiusLabel) radiusLabel.textContent = `${currentRadius} km`;
-    radiusInput.addEventListener("input", (e) => {
-      currentRadius = Number(e.target.value || 10);
-      if (radiusLabel) radiusLabel.textContent = `${currentRadius} km`;
-      const headerLabel = document.getElementById("header-radius-label");
-      if (headerLabel) headerLabel.textContent = `${currentRadius} km Radius`;
-      renderShops();
-      renderNotices();
-      renderFeedOrReels();
-    });
-    radiusInput.addEventListener("change", (e) => {
-      currentRadius = Number(e.target.value || 10);
-      fetchLiveMapPlaces(currentRadius);
-    });
-  }
-
-  const categorySelect = document.getElementById("categoryFilter");
-  if (categorySelect) {
-    categorySelect.addEventListener("change", (e) => {
-      currentCategory = e.target.value || "All";
-      renderShops();
-      renderNotices();
-      renderFeedOrReels();
-    });
-  }
-
-  renderInterestButtons("signup");
-
-  if (userSession && userSession.username) {
-    enterMainApp();
-  } else {
-    switchAuthMode("login");
-  }
-});
