@@ -1,5 +1,6 @@
 const SUPABASE_URL = "https://suahnywkmysshkmlqftn.supabase.co";
-const SUPABASE_KEY = "sb_publishable_q0WoTzHBfZO12o_gH6dkRg_ffopYrq";
+const SUPABASE_KEY = "sb_publishable_q0WoTzHBfZOl2O_gH6dkRg_tffopYrqw";
+
 const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
@@ -110,6 +111,21 @@ function renderProfileHeader() {
   document.getElementById("stat-city").innerText = userSession.city;
 }
 
+async function isUsernameTaken(username, currentEmail = "") {
+  if (!supabaseClient || !username) return false;
+
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("email, username")
+    .eq("username", username);
+
+  if (error || !data || data.length === 0) return false;
+
+  return data.some(
+    (row) => (row.email || "").toLowerCase() !== (currentEmail || "").toLowerCase()
+  );
+}
+
 async function sendEmailOtp() {
   const email = document.getElementById("reg-email").value.trim().toLowerCase();
   const statusEl = document.getElementById("otp-status-msg");
@@ -207,9 +223,19 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
 
   const name = document.getElementById("reg-name").value.trim();
   const email = document.getElementById("reg-email").value.trim().toLowerCase();
-  const username = document.getElementById("reg-username").value.trim().toLowerCase();
+  const username = document
+    .getElementById("reg-username")
+    .value.trim()
+    .toLowerCase()
+    .replace(/^@/, "")
+    .replace(/\s+/g, "_");
   const dob = document.getElementById("reg-dob").value;
   const city = document.getElementById("reg-city").value;
+
+  if (!username) {
+    alert("Please enter a valid username.");
+    return;
+  }
 
   if (!verifiedEmailForSignup || verifiedEmailForSignup !== email) {
     alert("Please click 'Send OTP', check your Gmail, and click 'Verify OTP' first.");
@@ -234,6 +260,12 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
     return;
   }
 
+  const taken = await isUsernameTaken(username, email);
+  if (taken) {
+    alert(`Username "@${username}" already taken hai. Koi aur username chuniye.`);
+    return;
+  }
+
   const interests =
     selectedSignupInterests.length > 0
       ? selectedSignupInterests
@@ -247,7 +279,11 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
       .single();
 
     if (error) {
-      alert("Profile save error: " + error.message);
+      if (error.message && error.message.toLowerCase().includes("unique")) {
+        alert(`Username "@${username}" already taken hai. Koi aur username chuniye.`);
+      } else {
+        alert("Profile save error: " + error.message);
+      }
       return;
     }
 
@@ -305,12 +341,23 @@ document.getElementById("edit-profile-form").addEventListener("submit", async (e
   if (!userSession) return;
 
   const newName = document.getElementById("edit-name").value.trim();
-  const newUsername = document.getElementById("edit-username").value.trim().toLowerCase();
+  const newUsername = document
+    .getElementById("edit-username")
+    .value.trim()
+    .toLowerCase()
+    .replace(/^@/, "")
+    .replace(/\s+/g, "_");
   const newCity = document.getElementById("edit-city").value;
 
   if (!newName || !newUsername) return;
   if (newCity !== "Indore") {
     alert("AroundU is live exclusively in Indore right now.");
+    return;
+  }
+
+  const taken = await isUsernameTaken(newUsername, userSession.email || "");
+  if (taken) {
+    alert(`Username "@${newUsername}" already kisi aur account me use ho raha hai.`);
     return;
   }
 
@@ -330,7 +377,11 @@ document.getElementById("edit-profile-form").addEventListener("submit", async (e
       .eq("email", userSession.email);
 
     if (error) {
-      alert("Could not update profile: " + error.message);
+      if (error.message && error.message.toLowerCase().includes("unique")) {
+        alert(`Username "@${newUsername}" already kisi aur account me use ho raha hai.`);
+      } else {
+        alert("Could not update profile: " + error.message);
+      }
       return;
     }
   }
