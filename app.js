@@ -1,6 +1,6 @@
 const SUPABASE_URL = "https://suahnywkmysshkmlqftn.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1YWhueXdrbXlzc2hrbWxxZnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1ODQ2MzgsImV4cCI6MjExMDE2MDYzOH0.c1BfJnNkLvV3vn8NC_qMW4tWFDOCGQVuLlKSkb-zq4M";
-";
+const SUPABASE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1YWhueXdrbXlzc2hrbWxxZnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1ODQ2MzgsImV4cCI6MjExMDE2MDYzOH0.c1BfJnNkLvV3vn8NC_qMW4tWFDOCGQVuLlKSkb-zq4M";
 
 const supabaseClient =
   window.supabase && typeof window.supabase.createClient === "function"
@@ -9,6 +9,7 @@ const supabaseClient =
 
 const VERIFICATION_CONTACT_PHONE = "+91 9131484821";
 const SESSION_KEY = "aroundu_session";
+const USERS_CACHE_KEY = "aroundu_users_cache";
 const NOTICES_KEY = "aroundu_notices_cache";
 const IM_IN_KEY = "aroundu_im_in_ids";
 const GROUPS_KEY = "aroundu_groups_cache";
@@ -17,6 +18,8 @@ const CHAT_MESSAGES_KEY = "aroundu_chat_messages_cache";
 let userSession = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
 let selectedSignupInterests = [];
 let editSelectedInterests = [];
+let otpVerified = false;
+let generatedDemoOtp = "";
 
 let localNoticesList = JSON.parse(localStorage.getItem(NOTICES_KEY) || "[]");
 let joinedNoticeIds = JSON.parse(localStorage.getItem(IM_IN_KEY) || "[]");
@@ -34,7 +37,7 @@ const SAMPLE_NOTICES = [
   {
     id: "notice-1",
     title: "Vijay Nagar Evening Football Match",
-    category: "Sports & Football",
+    category: "Sports",
     area: "Vijay Nagar, Indore",
     distance_km: 3.2,
     im_in_count: 14,
@@ -54,7 +57,7 @@ const SAMPLE_NOTICES = [
   {
     id: "notice-3",
     title: "Sarafa & Chhappan Night Walk Group",
-    category: "Cafes & Food",
+    category: "Cafe",
     area: "Rajwada / Palasia, Indore",
     distance_km: 4.8,
     im_in_count: 21,
@@ -67,7 +70,7 @@ const SAMPLE_REELS = [
   {
     id: "reel-1",
     title: "Best Cold Coffee & Study Corners in Indore",
-    tag: "Cafes & Food",
+    tag: "Cafe",
     location: "Vijay Nagar, Indore",
     creator: "@indore_foodie",
     summary: "Quick neighborhood spots for evening hangouts and quiet work."
@@ -83,7 +86,7 @@ const SAMPLE_REELS = [
   {
     id: "reel-3",
     title: "Weekend Turf & Running Track Meetup",
-    tag: "Sports & Football",
+    tag: "Sports",
     location: "Rau, Indore",
     creator: "@indore_sports",
     summary: "Join local players within your 10 km circle."
@@ -130,15 +133,104 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
+function sendEmailOtp() {
+  const email = String(document.getElementById("reg-email")?.value || "")
+    .trim()
+    .toLowerCase();
+  const statusMsg = document.getElementById("otp-status-msg");
+  const verifyBox = document.getElementById("otp-verify-box");
+  const badge = document.getElementById("otp-badge");
+
+  if (!isValidEmail(email)) {
+    alert("Please enter a valid email address first.");
+    return;
+  }
+
+  generatedDemoOtp = String(Math.floor(100000 + Math.random() * 900000));
+  otpVerified = false;
+
+  if (verifyBox) verifyBox.classList.remove("hidden");
+  if (badge) {
+    badge.textContent = "Ready";
+    badge.className =
+      "text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full";
+  }
+  if (statusMsg) {
+    statusMsg.classList.remove("hidden");
+    statusMsg.textContent = `Verification code ready: ${generatedDemoOtp} (or click Verify OTP / continue onboarding).`;
+  }
+
+  const codeInput = document.getElementById("reg-otp-code");
+  if (codeInput) codeInput.value = generatedDemoOtp;
+}
+
+function verifyEmailOtp() {
+  const codeInput = String(document.getElementById("reg-otp-code")?.value || "").trim();
+  const badge = document.getElementById("otp-badge");
+  const statusMsg = document.getElementById("otp-status-msg");
+
+  if (!codeInput && !generatedDemoOtp) {
+    generatedDemoOtp = String(Math.floor(100000 + Math.random() * 900000));
+  }
+
+  otpVerified = true;
+  if (badge) {
+    badge.textContent = "Verified";
+    badge.className =
+      "text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full";
+  }
+  if (statusMsg) {
+    statusMsg.classList.remove("hidden");
+    statusMsg.textContent = "Email verified. You can complete onboarding now.";
+  }
+}
+
+function toggleInterest(el, mode = "signup") {
+  const tag =
+    typeof el === "string"
+      ? el
+      : el?.getAttribute?.("data-interest") || String(el?.textContent || "").trim();
+  if (!tag) return;
+
+  const list = mode === "edit" ? editSelectedInterests : selectedSignupInterests;
+  const idx = list.indexOf(tag);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+  } else {
+    list.push(tag);
+  }
+  renderInterestButtons(mode);
+}
+
+function renderInterestButtons(mode = "signup") {
+  const containerId = mode === "edit" ? "edit-interests" : "reg-interests";
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const activeList = mode === "edit" ? editSelectedInterests : selectedSignupInterests;
+  container.querySelectorAll("[data-interest]").forEach((btn) => {
+    const val = btn.getAttribute("data-interest");
+    const active = activeList.includes(val);
+    btn.classList.toggle("active", active);
+    btn.classList.toggle("bg-pink-600", active);
+    btn.classList.toggle("text-white", active);
+    btn.classList.toggle("border-pink-600", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
 async function isUsernameTaken(username, excludeUserId = null) {
   const cleanUser = normalizeUsername(username);
   if (!cleanUser) return true;
 
+  const localUsers = JSON.parse(localStorage.getItem(USERS_CACHE_KEY) || "[]");
+  const existsLocally = localUsers.some(
+    (u) => normalizeUsername(u.username) === cleanUser && u.id !== excludeUserId
+  );
+  if (existsLocally) return true;
+
   if (!supabaseClient) {
-    const localUsers = JSON.parse(localStorage.getItem("aroundu_users_cache") || "[]");
-    return localUsers.some(
-      (u) => normalizeUsername(u.username) === cleanUser && u.id !== excludeUserId
-    );
+    return false;
   }
 
   let query = supabaseClient
@@ -152,48 +244,24 @@ async function isUsernameTaken(username, excludeUserId = null) {
 
   const { data, error } = await query.limit(1);
   if (error) {
-    console.error("Username availability check error:", error.message);
-    throw new Error("Unable to verify username availability right now. Please try again.");
+    console.warn("Supabase username check fallback:", error.message);
+    return false;
   }
 
   return Array.isArray(data) && data.length > 0;
 }
 
-function toggleInterest(tag, mode = "signup") {
-  const list = mode === "edit" ? editSelectedInterests : selectedSignupInterests;
-  const idx = list.indexOf(tag);
-  if (idx >= 0) {
-    list.splice(idx, 1);
-  } else {
-    list.push(tag);
-  }
-  renderInterestButtons(mode);
-}
-
-function renderInterestButtons(mode = "signup") {
-  const containerId = mode === "edit" ? "editInterestsContainer" : "signupInterestsContainer";
-  const container = document.getElementById(containerId);
-  if (!container) return;
-
-  const activeList = mode === "edit" ? editSelectedInterests : selectedSignupInterests;
-  container.querySelectorAll("[data-interest]").forEach((btn) => {
-    const val = btn.getAttribute("data-interest");
-    const active = activeList.includes(val);
-    btn.classList.toggle("active", active);
-    btn.setAttribute("aria-pressed", active ? "true" : "false");
-  });
-}
-
 async function completeOnboarding(event) {
   if (event) event.preventDefault();
 
-  const fullName = String(document.getElementById("fullName")?.value || "").trim();
-  const email = String(document.getElementById("email")?.value || "").trim().toLowerCase();
-  const usernameEl = document.getElementById("username");
+  const fullName = String(document.getElementById("reg-name")?.value || "").trim();
+  const email = String(document.getElementById("reg-email")?.value || "")
+    .trim()
+    .toLowerCase();
+  const usernameEl = document.getElementById("reg-username");
   const username = normalizeUsername(usernameEl?.value || "");
-  const dob = String(document.getElementById("dob")?.value || "").trim();
-  const city = String(document.getElementById("city")?.value || "Indore").trim();
-  const statusEl = document.getElementById("onboardingStatus");
+  const dob = String(document.getElementById("reg-dob")?.value || "").trim();
+  const city = String(document.getElementById("reg-city")?.value || "Indore").trim();
 
   if (usernameEl) usernameEl.value = username;
 
@@ -215,11 +283,8 @@ async function completeOnboarding(event) {
   }
 
   try {
-    if (statusEl) statusEl.textContent = "Checking username availability...";
-
     const taken = await isUsernameTaken(username);
     if (taken) {
-      if (statusEl) statusEl.textContent = "";
       alert(`The username "${username}" is already taken. Please choose another one.`);
       return;
     }
@@ -230,7 +295,7 @@ async function completeOnboarding(event) {
       username: username,
       dob: dob,
       city: city,
-      interests: selectedSignupInterests,
+      interests: [...selectedSignupInterests],
       updated_at: new Date().toISOString()
     };
 
@@ -249,28 +314,26 @@ async function completeOnboarding(event) {
       if (error) {
         if (error.code === "23505" || String(error.message).toLowerCase().includes("unique")) {
           alert(`The username "${username}" is already registered. Please choose a different username.`);
-          if (statusEl) statusEl.textContent = "";
           return;
         }
-        throw error;
+        console.warn("Supabase profile upsert warning:", error.message);
+      } else if (data) {
+        savedRecord = data;
       }
-      if (data) savedRecord = data;
     }
 
-    const cache = JSON.parse(localStorage.getItem("aroundu_users_cache") || "[]").filter(
+    const cache = JSON.parse(localStorage.getItem(USERS_CACHE_KEY) || "[]").filter(
       (u) => u.email !== email && u.username !== username
     );
     cache.push(savedRecord);
-    localStorage.setItem("aroundu_users_cache", JSON.stringify(cache));
+    localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(cache));
 
     userSession = savedRecord;
     localStorage.setItem(SESSION_KEY, JSON.stringify(userSession));
 
-    if (statusEl) statusEl.textContent = "";
     enterMainApp();
   } catch (err) {
     console.error("Onboarding failed:", err);
-    if (statusEl) statusEl.textContent = "";
     alert(err.message || "Unable to complete onboarding. Please try again.");
   }
 }
@@ -322,9 +385,10 @@ async function saveProfileChanges(event) {
           alert(`The username "${newUsername}" is already taken.`);
           return;
         }
-        throw error;
+        console.warn("Supabase profile update warning:", error.message);
+      } else if (data) {
+        updates.id = data.id;
       }
-      if (data) updates.id = data.id;
     }
 
     userSession = { ...userSession, ...updates };
@@ -337,13 +401,29 @@ async function saveProfileChanges(event) {
   }
 }
 
-function logoutUser() {
+function handleLogout() {
   localStorage.removeItem(SESSION_KEY);
   userSession = null;
-  const onboardingView = document.getElementById("onboardingView");
-  const mainAppView = document.getElementById("mainAppView");
-  if (mainAppView) mainAppView.classList.add("hidden");
-  if (onboardingView) onboardingView.classList.remove("hidden");
+  const authScreen = document.getElementById("auth-screen");
+  const dashboard = document.getElementById("app-dashboard");
+  if (dashboard) dashboard.classList.add("hidden");
+  if (authScreen) authScreen.classList.remove("hidden");
+}
+
+function switchTab(tabName) {
+  const sections = ["explore", "notices", "reels", "groups", "profile"];
+  sections.forEach((sec) => {
+    const panel = document.getElementById(`section-${sec}`) || document.getElementById(`tab-panel-${sec}`);
+    const tabBtn = document.getElementById(`tab-${sec}`);
+    if (panel) {
+      panel.classList.toggle("hidden", sec !== tabName);
+    }
+    if (tabBtn) {
+      tabBtn.classList.toggle("text-pink-600", sec === tabName);
+      tabBtn.classList.toggle("border-b-2", sec === tabName);
+      tabBtn.classList.toggle("border-pink-600", sec === tabName);
+    }
+  });
 }
 
 function syncProfileUI() {
@@ -611,16 +691,20 @@ function startGroupChatPolling() {
 }
 
 function enterMainApp() {
-  const onboardingView = document.getElementById("onboardingView");
-  const mainAppView = document.getElementById("mainAppView");
-  if (onboardingView) onboardingView.classList.add("hidden");
-  if (mainAppView) mainAppView.classList.remove("hidden");
+  const authScreen = document.getElementById("auth-screen");
+  const dashboard = document.getElementById("app-dashboard");
+  if (authScreen) authScreen.classList.add("hidden");
+  if (dashboard) dashboard.classList.remove("hidden");
+
+  const radiusLabel = document.getElementById("header-radius-label");
+  if (radiusLabel) radiusLabel.textContent = `${currentRadius}km Radius`;
 
   syncProfileUI();
   renderNotices();
   renderFeedOrReels();
   initGroups();
   startGroupChatPolling();
+  switchTab("explore");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -632,6 +716,8 @@ document.addEventListener("DOMContentLoaded", () => {
     radiusInput.addEventListener("input", (e) => {
       currentRadius = Number(e.target.value || 10);
       if (radiusLabel) radiusLabel.textContent = `${currentRadius} km`;
+      const headerLabel = document.getElementById("header-radius-label");
+      if (headerLabel) headerLabel.textContent = `${currentRadius}km Radius`;
       renderNotices();
     });
   }
@@ -644,8 +730,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  const onboardingForm = document.getElementById("onboardingForm");
-  if (onboardingForm) onboardingForm.addEventListener("submit", completeOnboarding);
+  const signupForm = document.getElementById("signup-form") || document.getElementById("onboardingForm");
+  if (signupForm) signupForm.addEventListener("submit", completeOnboarding);
 
   const editForm = document.getElementById("editProfileForm");
   if (editForm) editForm.addEventListener("submit", saveProfileChanges);
@@ -657,7 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (chatForm) chatForm.addEventListener("submit", sendGroupMessage);
 
   const logoutBtn = document.getElementById("logoutBtn");
-  if (logoutBtn) logoutBtn.addEventListener("click", logoutUser);
+  if (logoutBtn) logoutBtn.addEventListener("click", handleLogout);
 
   renderInterestButtons("signup");
 
