@@ -2,9 +2,6 @@ const SUPABASE_URL = "https://suahnywkmysshkmlqftn.supabase.co";
 const SUPABASE_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN1YWhueXdrbXlzc2hrbWxxZnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ1ODQ2MzgsImV4cCI6MjExMDE2MDYzOH0.c1BfJnNkLvV3vn8NC_qMW4tWFDOCGQVuLlKSkb-zq4M";
 
-// Optional: If you have a billing-enabled Google Maps API key, set it here; otherwise live OpenStreetMap/Overpass data is used.
-const GOOGLE_MAPS_API_KEY = "";
-
 const INDORE_CENTER = { lat: 22.7196, lon: 75.8577 };
 const VERIFICATION_CONTACT_PHONE = "+91 9131484821";
 const SHOP_LISTING_PRICE_INR = 99;
@@ -17,11 +14,30 @@ const GROUPS_KEY = "aroundu_groups_cache";
 const CHAT_MESSAGES_KEY = "aroundu_chat_messages_cache";
 const REELS_KEY = "aroundu_reels_cache";
 const SHOP_INQUIRIES_KEY = "aroundu_shop_inquiries_cache";
+const INVITES_KEY = "aroundu_friend_invites_cache";
+
+function getSupabase() {
+  if (window.__arounduSupabase) return window.__arounduSupabase;
+  if (window.supabase && typeof window.supabase.createClient === "function") {
+    try {
+      window.__arounduSupabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      return window.__arounduSupabase;
+    } catch (err) {
+      console.warn("Supabase init warning:", err.message);
+    }
+  }
+  return null;
+}
+
+const supabaseClient = getSupabase();
 
 let userSession = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
 let currentSignupStep = 1;
 let selectedSignupInterests = [];
 let editSelectedInterests = [];
+
+let generatedOtpCode = "";
+let isOtpVerified = false;
 
 let liveMapPlaces = [];
 let isLoadingMapPlaces = false;
@@ -35,6 +51,7 @@ let currentFeedTab = "Reels";
 
 let userReelsList = JSON.parse(localStorage.getItem(REELS_KEY) || "[]");
 let shopInquiriesList = JSON.parse(localStorage.getItem(SHOP_INQUIRIES_KEY) || "[]");
+let friendInvitesList = JSON.parse(localStorage.getItem(INVITES_KEY) || "[]");
 
 let communitiesList = JSON.parse(localStorage.getItem(GROUPS_KEY) || "[]");
 let chatMessagesMap = JSON.parse(localStorage.getItem(CHAT_MESSAGES_KEY) || "{}");
@@ -77,32 +94,29 @@ const SAMPLE_NOTICES = [
 const SAMPLE_REELS = [
   {
     id: "reel-1",
-    title: "Best Cold Coffee & Study Corners in Indore",
+    title: "Indore Evening Cafe & Hangout Spot",
     tag: "Cafe",
     location: "Vijay Nagar, Indore",
     distance_km: 4.5,
     creator: "@indore_foodie",
-    summary: "Quick neighborhood spots for evening hangouts and quiet work.",
     videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
   },
   {
     id: "reel-2",
-    title: "Home Renovation & Site Planning Checklist",
+    title: "Silicon City & AB Road Site Walkthrough",
     tag: "Construction",
     location: "Silicon City / AB Road, Indore",
     distance_km: 2.4,
     creator: "@3art_indore",
-    summary: "Essential steps before starting residential or commercial work.",
     videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
   },
   {
     id: "reel-3",
-    title: "Weekend Turf & Running Track Meetup",
+    title: "Weekend Turf & Sports Session",
     tag: "Sports",
     location: "Rau, Indore",
     distance_km: 5.8,
     creator: "@indore_sports",
-    summary: "Join local players within your 10 km circle.",
     videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4"
   }
 ];
@@ -145,6 +159,56 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function sendSignupOtp() {
+  const email = String(document.getElementById("reg-email")?.value || "").trim().toLowerCase();
+  if (!isValidEmail(email)) {
+    alert("Please enter a valid email address first.");
+    return;
+  }
+  generatedOtpCode = String(Math.floor(100000 + Math.random() * 900000));
+  isOtpVerified = false;
+
+  const badge = document.getElementById("otp-badge");
+  const statusEl = document.getElementById("otp-status-text");
+  const inputEl = document.getElementById("reg-otp-input");
+
+  if (badge) {
+    badge.textContent = "OTP Sent";
+    badge.className = "text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300";
+  }
+  if (statusEl) {
+    statusEl.textContent = `Demo OTP for ${email}: ${generatedOtpCode}`;
+  }
+  if (inputEl) {
+    inputEl.value = generatedOtpCode;
+    inputEl.focus();
+  }
+}
+
+function verifySignupOtp() {
+  const entered = String(document.getElementById("reg-otp-input")?.value || "").trim();
+  if (!generatedOtpCode) {
+    alert("Click 'Send OTP' first.");
+    return;
+  }
+  if (entered !== generatedOtpCode) {
+    isOtpVerified = false;
+    alert("Incorrect OTP. Please check and try again.");
+    return;
+  }
+
+  isOtpVerified = true;
+  const badge = document.getElementById("otp-badge");
+  const statusEl = document.getElementById("otp-status-text");
+  if (badge) {
+    badge.textContent = "Verified ✓";
+    badge.className = "text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300";
+  }
+  if (statusEl) {
+    statusEl.textContent = "OTP verified successfully.";
+  }
 }
 
 function calculateDistanceKm(lat1, lon1, lat2, lon2) {
@@ -284,6 +348,10 @@ function goToSignupStep(step) {
       alert("Please enter a valid email address.");
       return;
     }
+    if (!isOtpVerified) {
+      alert("Please send and verify your OTP first.");
+      return;
+    }
     if (password.length < 6) {
       alert("Password must be at least 6 characters long.");
       return;
@@ -318,11 +386,11 @@ function goToSignupStep(step) {
 
   if (indicator) {
     const labels = {
-      1: "Step 1 of 3 • Account Details",
+      1: "Step 1 of 3 • Account & OTP",
       2: "Step 2 of 3 • Username & Age",
       3: "Step 3 of 3 • City & Interests"
     };
-    indicator.textContent = labels[step] || "Step 1 of 3 • Account Details";
+    indicator.textContent = labels[step] || "Step 1 of 3 • Account & OTP";
   }
 }
 
@@ -347,21 +415,13 @@ async function handleLogin(event) {
       normalizeUsername(u.username) === cleanHandle
   );
 
-  if (!matchedUser && supabaseClient) {
-    const byEmail = await supabaseClient
-      .from("profiles")
-      .select("*")
-      .ilike("email", cleanIdentifier)
-      .limit(1);
-
+  const sb = getSupabase();
+  if (!matchedUser && sb) {
+    const byEmail = await sb.from("profiles").select("*").ilike("email", cleanIdentifier).limit(1);
     if (byEmail.data && byEmail.data.length) {
       matchedUser = byEmail.data[0];
     } else if (cleanHandle) {
-      const byUsername = await supabaseClient
-        .from("profiles")
-        .select("*")
-        .ilike("username", cleanHandle)
-        .limit(1);
+      const byUsername = await sb.from("profiles").select("*").ilike("username", cleanHandle).limit(1);
       if (byUsername.data && byUsername.data.length) {
         matchedUser = byUsername.data[0];
       }
@@ -427,18 +487,11 @@ async function isUsernameTaken(username, excludeUserId = null) {
   );
   if (existsLocally) return true;
 
-  if (!supabaseClient) {
-    return false;
-  }
+  const sb = getSupabase();
+  if (!sb) return false;
 
-  let query = supabaseClient
-    .from("profiles")
-    .select("id, username")
-    .ilike("username", cleanUser);
-
-  if (excludeUserId) {
-    query = query.neq("id", excludeUserId);
-  }
+  let query = sb.from("profiles").select("id, username").ilike("username", cleanUser);
+  if (excludeUserId) query = query.neq("id", excludeUserId);
 
   const { data, error } = await query.limit(1);
   if (error) {
@@ -464,9 +517,9 @@ async function completeOnboarding(event) {
 
   if (usernameEl) usernameEl.value = username;
 
-  if (!fullName || !isValidEmail(email) || password.length < 6) {
+  if (!fullName || !isValidEmail(email) || !isOtpVerified || password.length < 6) {
     goToSignupStep(1);
-    alert("Please complete Step 1 with your name, a valid email, and a 6+ character password.");
+    alert("Please complete Step 1, verify OTP, and enter a 6+ character password.");
     return;
   }
   if (!username || username.length < 3 || !isAge16Plus(dob)) {
@@ -489,18 +542,26 @@ async function completeOnboarding(event) {
       username: username,
       dob: dob,
       city: city,
+      otp_verified: true,
       interests: [...selectedSignupInterests],
       updated_at: new Date().toISOString()
     };
 
+    const userId =
+      userSession?.id ||
+      (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `usr-${Date.now()}`);
+
     let savedRecord = {
       ...profileData,
-      id: userSession?.id || crypto.randomUUID(),
+      id: userId,
       password
     };
 
-    if (supabaseClient) {
-      const { data, error } = await supabaseClient
+    const sb = getSupabase();
+    if (sb) {
+      const { data, error } = await sb
         .from("profiles")
         .upsert(profileData, { onConflict: "email" })
         .select()
@@ -568,8 +629,9 @@ async function saveProfileChanges(event) {
       updated_at: new Date().toISOString()
     };
 
-    if (supabaseClient) {
-      const { data, error } = await supabaseClient
+    const sb = getSupabase();
+    if (sb) {
+      const { data, error } = await sb
         .from("profiles")
         .update(updates)
         .eq("email", userSession.email)
@@ -601,6 +663,8 @@ function handleLogout() {
   localStorage.removeItem(SESSION_KEY);
   userSession = null;
   currentSignupStep = 1;
+  isOtpVerified = false;
+  generatedOtpCode = "";
   const authScreen = document.getElementById("auth-screen");
   const dashboard = document.getElementById("app-dashboard");
   if (dashboard) dashboard.classList.add("hidden");
@@ -689,7 +753,7 @@ function renderShops() {
           `
         )
         .join("")
-    : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No registered map places found within ${escapeHtml(currentRadius)} km for this filter. Try increasing the radius or switching category to All.</p>`;
+    : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No registered map places found within ${escapeHtml(currentRadius)} km for this filter.</p>`;
 
   if (container) container.innerHTML = cardsHtml;
   if (preview) preview.innerHTML = cardsHtml;
@@ -720,8 +784,9 @@ async function submitShopListingInquiry(event) {
   shopInquiriesList = [inquiry, ...shopInquiriesList];
   localStorage.setItem(SHOP_INQUIRIES_KEY, JSON.stringify(shopInquiriesList));
 
-  if (supabaseClient) {
-    const { error } = await supabaseClient.from("shop_listing_inquiries").insert([inquiry]);
+  const sb = getSupabase();
+  if (sb) {
+    const { error } = await sb.from("shop_listing_inquiries").insert([inquiry]);
     if (error) console.warn("Supabase shop inquiry warning:", error.message);
   }
 
@@ -743,11 +808,17 @@ async function createReel(event) {
   const title = String(document.getElementById("reelTitle")?.value || "").trim();
   const tag = String(document.getElementById("reelCategory")?.value || "Cafe").trim();
   const location = String(document.getElementById("reelArea")?.value || "Indore").trim();
-  const videoUrlRaw = String(document.getElementById("reelVideoUrl")?.value || "").trim();
+  const fileEl = document.getElementById("reelVideoFile");
+  const urlRaw = String(document.getElementById("reelVideoUrl")?.value || "").trim();
 
   if (!title) {
-    alert("Please enter a reel title or caption.");
+    alert("Please enter a reel caption.");
     return;
+  }
+
+  let videoSrc = urlRaw || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+  if (fileEl && fileEl.files && fileEl.files[0]) {
+    videoSrc = URL.createObjectURL(fileEl.files[0]);
   }
 
   const creatorHandle = userSession?.username ? `@${userSession.username}` : "@indore_creator";
@@ -758,17 +829,17 @@ async function createReel(event) {
     location,
     distance_km: 2.0,
     creator: creatorHandle,
-    summary: `Posted by ${userSession?.full_name || "AroundU Member"} in ${location}.`,
-    videoUrl:
-      videoUrlRaw ||
-      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4"
+    videoUrl: videoSrc
   };
 
   userReelsList = [newReel, ...userReelsList];
-  localStorage.setItem(REELS_KEY, JSON.stringify(userReelsList));
+  try {
+    localStorage.setItem(REELS_KEY, JSON.stringify(userReelsList.filter((r) => !String(r.videoUrl).startsWith("blob:"))));
+  } catch (_) {}
 
-  if (supabaseClient) {
-    const { error } = await supabaseClient.from("reels").insert([newReel]);
+  const sb = getSupabase();
+  if (sb && !String(videoSrc).startsWith("blob:")) {
+    const { error } = await sb.from("reels").insert([newReel]);
     if (error) console.warn("Supabase reels sync warning:", error.message);
   }
 
@@ -776,6 +847,7 @@ async function createReel(event) {
   const urlEl = document.getElementById("reelVideoUrl");
   if (titleEl) titleEl.value = "";
   if (urlEl) urlEl.value = "";
+  if (fileEl) fileEl.value = "";
 
   renderFeedOrReels();
 }
@@ -853,8 +925,9 @@ async function createNotice(event) {
   localNoticesList = [newNotice, ...baseList];
   localStorage.setItem(NOTICES_KEY, JSON.stringify(localNoticesList));
 
-  if (supabaseClient) {
-    const { error } = await supabaseClient.from("notices").insert([newNotice]);
+  const sb = getSupabase();
+  if (sb) {
+    const { error } = await sb.from("notices").insert([newNotice]);
     if (error) console.warn("Supabase notices sync warning:", error.message);
   }
 
@@ -982,7 +1055,6 @@ function renderFeedOrReels() {
           <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-1.5 card-pop">
             <span class="text-[10px] font-bold text-pink-600 uppercase">${escapeHtml(item.tag)} • ${escapeHtml(currentFeedTab)}</span>
             <h4 class="text-sm font-bold text-neutral-900">${escapeHtml(item.title)}</h4>
-            <p class="text-xs text-neutral-600">${escapeHtml(item.summary || "")}</p>
             <small class="text-[11px] text-neutral-400">${escapeHtml(item.creator)} • ${escapeHtml(item.location)}</small>
           </div>
         `
@@ -1001,11 +1073,46 @@ function initGroups() {
   }
   renderGroups();
   renderGroupChat();
+  renderInvitedFriends();
+}
+
+function createNewGroup(event) {
+  if (event) event.preventDefault();
+
+  const name = String(document.getElementById("newGroupName")?.value || "").trim();
+  const area = String(document.getElementById("newGroupArea")?.value || "Indore").trim();
+
+  if (!name) {
+    alert("Please enter a group name.");
+    return;
+  }
+
+  const newGroup = {
+    id: `grp-${Date.now()}`,
+    name,
+    area: area || "Indore"
+  };
+
+  communitiesList = [newGroup, ...communitiesList];
+  localStorage.setItem(GROUPS_KEY, JSON.stringify(communitiesList));
+  activeGroupId = newGroup.id;
+
+  const nameEl = document.getElementById("newGroupName");
+  if (nameEl) nameEl.value = "";
+
+  renderGroups();
+  renderGroupChat();
 }
 
 function renderGroups() {
   const listEl = document.getElementById("groupsListContainer");
+  const headerEl = document.getElementById("activeChatHeader");
   if (!listEl) return;
+
+  const activeGroup = communitiesList.find((g) => g.id === activeGroupId);
+  if (headerEl && activeGroup) {
+    headerEl.textContent = `${activeGroup.name} (${activeGroup.area})`;
+  }
 
   listEl.innerHTML = communitiesList
     .map((g) => {
@@ -1072,8 +1179,9 @@ async function sendGroupMessage(event) {
   chatMessagesMap[activeGroupId] = existing;
   localStorage.setItem(CHAT_MESSAGES_KEY, JSON.stringify(chatMessagesMap));
 
-  if (supabaseClient) {
-    const { error } = await supabaseClient.from("group_messages").insert([
+  const sb = getSupabase();
+  if (sb) {
+    const { error } = await sb.from("group_messages").insert([
       {
         group_id: activeGroupId,
         sender_username: userSession?.username || "member",
@@ -1085,6 +1193,57 @@ async function sendGroupMessage(event) {
 
   if (input) input.value = "";
   renderGroupChat();
+}
+
+function sendFriendInvite() {
+  const input = document.getElementById("inviteFriendInput");
+  const target = String(input?.value || "").trim();
+  if (!target) {
+    alert("Enter a friend's username, email, or phone number.");
+    return;
+  }
+
+  const invite = {
+    id: `inv-${Date.now()}`,
+    target,
+    invited_by: userSession?.username || "member",
+    created_at: new Date().toISOString()
+  };
+
+  friendInvitesList = [invite, ...friendInvitesList];
+  localStorage.setItem(INVITES_KEY, JSON.stringify(friendInvitesList));
+  if (input) input.value = "";
+  renderInvitedFriends();
+}
+
+function copyInviteLink() {
+  const refCode = userSession?.username || "indore";
+  const shareUrl = `${window.location.origin}/?invite=${encodeURIComponent(refCode)}`;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(shareUrl).catch(() => {});
+  }
+  alert(`Invite link ready: ${shareUrl}`);
+}
+
+function renderInvitedFriends() {
+  const listEl = document.getElementById("invitedFriendsList");
+  if (!listEl) return;
+
+  if (!friendInvitesList.length) {
+    listEl.innerHTML = "";
+    return;
+  }
+
+  listEl.innerHTML = friendInvitesList
+    .map(
+      (inv) => `
+        <div class="text-[11px] bg-neutral-50 border border-neutral-200/80 rounded-xl px-3 py-1.5 flex items-center justify-between">
+          <span class="font-semibold text-neutral-800">${escapeHtml(inv.target)}</span>
+          <span class="text-pink-600 font-bold">Invited</span>
+        </div>
+      `
+    )
+    .join("");
 }
 
 function startGroupChatPolling() {
