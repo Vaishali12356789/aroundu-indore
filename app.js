@@ -16,6 +16,15 @@ const REELS_KEY = "aroundu_reels_cache";
 const SHOP_INQUIRIES_KEY = "aroundu_shop_inquiries_cache";
 const INVITES_KEY = "aroundu_friend_invites_cache";
 
+const GOOGLE_CATEGORY_TYPES = {
+  Cafe: ["cafe", "restaurant", "bakery"],
+  Sports: ["sports_complex", "stadium", "gym"],
+  Stationery: ["book_store"],
+  Construction: ["hardware_store"],
+  Entertainment: ["movie_theater", "amusement_center"],
+  Market: ["shopping_mall", "supermarket", "store"]
+};
+
 function getSupabase() {
   if (window.__arounduSupabase) return window.__arounduSupabase;
   if (window.supabase && typeof window.supabase.createClient === "function") {
@@ -41,6 +50,8 @@ let isOtpVerified = false;
 
 let liveMapPlaces = [];
 let isLoadingMapPlaces = false;
+let placeFetchSeq = 0;
+let radiusDebounceTimer = null;
 
 let localNoticesList = JSON.parse(localStorage.getItem(NOTICES_KEY) || "[]");
 let joinedNoticeIds = JSON.parse(localStorage.getItem(IM_IN_KEY) || "[]");
@@ -298,101 +309,133 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function mapOsmTagsToCategory(tags = {}) {
-  const amenity = String(tags.amenity || "").toLowerCase();
-  const shop = String(tags.shop || "").toLowerCase();
-  const craft = String(tags.craft || "").toLowerCase();
-  const leisure = String(tags.leisure || "").toLowerCase();
-
-  if (
-    ["cafe", "restaurant", "fast_food", "food_court", "bakery"].includes(amenity) ||
-    ["bakery", "coffee", "confectionery"].includes(shop)
-  ) {
-    return "Cafe";
-  }
-  if (["sports_centre", "stadium", "pitch"].includes(leisure) || ["sports"].includes(shop)) {
-    return "Sports";
-  }
-  if (["stationery", "books", "copyshop"].includes(shop)) {
-    return "Stationery";
-  }
-  if (
-    ["builder", "architect", "carpenter", "plumber", "electrician"].includes(craft) ||
-    ["hardware", "building_materials"].includes(shop)
-  ) {
-    return "Construction";
-  }
-  if (["cinema", "theatre", "arts_centre"].includes(amenity)) {
-    return "Entertainment";
-  }
+function mapGoogleTypesToCategory(types = []) {
+  const t = new Set((types || []).map((x) => String(x).toLowerCase()));
+  if (t.has("cafe") || t.has("restaurant") || t.has("bakery")) return "Cafe";
+  if (t.has("sports_complex") || t.has("stadium") || t.has("gym")) return "Sports";
+  if (t.has("book_store")) return "Stationery";
+  if (t.has("hardware_store")) return "Construction";
+  if (t.has("movie_theater") || t.has("amusement_center")) return "Entertainment";
   return "Market";
 }
 
-async function fetchLiveMapPlaces(radiusKm = currentRadius) {
+function getPlaceLatLng(loc) {
+  if (!loc) return null;
+  const lat = typeof loc.lat === "function" ? loc.lat() : loc.lat;
+  const lng = typeof loc.lng === "function" ? loc.lng() : loc.lng;
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+  return { lat, lng };
+}
+
+function syncRadiusLabels(kmValue) {
+  ["radiusValue", "radiusLabel", "currentRadiusText"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = `${kmValue} km`;
+  });
+}
+
+async function fetchLiveMapPlaces(radiusKm = currentRadius, category = currentCategory) {
+  const seq = ++placeFetchSeq;
+  currentRadius = Math.max(1, Math.min(50, Number(radiusKm || 10)));
+  currentCategory = category || "All";
+  syncRadiusLabels(currentRadius);
+
   isLoadingMapPlaces = true;
   renderShops();
 
-  const radiusMeters = Math.max(1000, Math.min(25000, Number(radiusKm || 10) * 1000));
-  const query = `
-    [out:json][timeout:15];
-    (
-      node["name"]["shop"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
-      node["name"]["amenity"~"cafe|restaurant|fast_food|cinema"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
-      node["name"]["craft"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
-      way["name"]["shop"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
-    );
-    out center 40;
-  `;
-
   try {
-    const res = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=UTF-8" },
-      body: query
+    if (!window.google?.maps?.importLibrary) {
+      throw new Error("Google Maps JavaScript API not loaded. Check API key in index.html.");
+    }
+
+    const [{ Place }] = await Promise.all([google.maps.importLibrary("places")]);
+
+    const includedTypes =
+      currentCategory !== "All" && GOOGLE_CATEGORY_TYPES[currentCategory]
+        ? GOOGLE_CATEGORY_TYPES[currentCategory]
+        : [
+            "cafe",
+            "restaurant",
+            "bakery",
+            "book_store",
+            "hardware_store",
+            "movie_theater",
+            "supermarket",
+            "shopping_mall"
+          ];
+
+    const { places = [] } = await Place.searchNearby({
+      fields: ["id", "displayName", "formattedAddress", "location", "types", "rating"],
+      locationRestriction: {
+        center: { lat: INDORE_CENTER.lat, lng: INDORE_CENTER.lon },
+        radius: currentRadius * 1000
+      },
+      includedTypes,
+      maxResultCount: 20
     });
-    if (!res.ok) throw new Error(`Map API HTTP ${res.status}`);
-    const json = await res.json();
-    const elements = Array.isArray(json.elements) ? json.elements : [];
 
-    liveMapPlaces = elements
-      .map((el, idx) => {
-        const lat = el.lat ?? el.center?.lat;
-        const lon = el.lon ?? el.center?.lon;
-        const tags = el.tags || {};
-        const name = String(tags.name || "").trim();
-        if (!name || typeof lat !== "number" || typeof lon !== "number") return null;
+    if (seq !== placeFetchSeq) return;
 
-        const dist = calculateDistanceKm(INDORE_CENTER.lat, INDORE_CENTER.lon, lat, lon);
-        const addr =
-          tags["addr:suburb"] ||
-          tags["addr:neighbourhood"] ||
-          tags["addr:street"] ||
-          "Indore, MP";
+    liveMapPlaces = places
+      .map((p, idx) => {
+        const coords = getPlaceLatLng(p.location);
+        if (!coords) return null;
+
+        const dist = calculateDistanceKm(
+          INDORE_CENTER.lat,
+          INDORE_CENTER.lon,
+          coords.lat,
+          coords.lng
+        );
+        const name = String(p.displayName || "").trim();
+        if (!name) return null;
+
+        const mappedCat =
+          currentCategory !== "All" ? currentCategory : mapGoogleTypesToCategory(p.types);
 
         return {
-          id: `osm-${el.id || idx}`,
+          id: p.id || `gplace-${idx}`,
           name,
-          category: mapOsmTagsToCategory(tags),
-          area: String(addr),
+          category: mappedCat,
+          area: String(p.formattedAddress || "Indore, MP"),
           distance_km: Number(dist.toFixed(1)),
-          source: "Map Registered",
-          tagline:
-            tags.description ||
-            tags.shop ||
-            tags.amenity ||
-            tags.craft ||
-            "Registered place on Indore map"
+          source: "Google Live",
+          tagline: p.rating ? `Rating ${p.rating} ★ • Nearby in Indore` : "Nearby place in Indore"
         };
       })
-      .filter(Boolean)
+      .filter((item) => item && item.distance_km <= currentRadius)
       .sort((a, b) => a.distance_km - b.distance_km);
   } catch (err) {
-    console.warn("Live map fetch warning:", err.message);
+    if (seq !== placeFetchSeq) return;
+    console.warn("Google Places searchNearby error:", err.message);
     liveMapPlaces = [];
   } finally {
-    isLoadingMapPlaces = false;
-    renderShops();
+    if (seq === placeFetchSeq) {
+      isLoadingMapPlaces = false;
+      renderShops();
+    }
   }
+}
+
+function setRadius(newRadiusKm, immediate = true) {
+  currentRadius = Math.max(1, Math.min(50, Number(newRadiusKm || 10)));
+  syncRadiusLabels(currentRadius);
+  clearTimeout(radiusDebounceTimer);
+
+  if (immediate) {
+    fetchLiveMapPlaces(currentRadius, currentCategory);
+  } else {
+    radiusDebounceTimer = setTimeout(() => {
+      fetchLiveMapPlaces(currentRadius, currentCategory);
+    }, 300);
+  }
+  if (typeof renderNotices === "function") renderNotices();
+}
+
+function setCategory(newCategory) {
+  currentCategory = newCategory || "All";
+  fetchLiveMapPlaces(currentRadius, currentCategory);
+  if (typeof renderNotices === "function") renderNotices();
 }
 
 function switchAuthMode(mode = "login") {
@@ -533,7 +576,7 @@ async function handleLogin(event) {
 
   userSession = matchedUser;
   localStorage.setItem(SESSION_KEY, JSON.stringify(userSession));
-  enterMainApp();
+  if (typeof enterMainApp === "function") enterMainApp();
 }
 
 function toggleInterest(el, mode = "signup") {
@@ -610,7 +653,13 @@ async function completeOnboarding(event) {
 
   if (usernameEl) usernameEl.value = username;
 
-  if (!fullName || !isValidEmail(email) || !isOtpVerified || otpSentToEmail !== email || password.length < 6) {
+  if (
+    !fullName ||
+    !isValidEmail(email) ||
+    !isOtpVerified ||
+    otpSentToEmail !== email ||
+    password.length < 6
+  ) {
     goToSignupStep(1);
     alert("Please complete Step 1, verify OTP, and enter a 6+ character password.");
     return;
@@ -681,7 +730,7 @@ async function completeOnboarding(event) {
     userSession = savedRecord;
     localStorage.setItem(SESSION_KEY, JSON.stringify(userSession));
 
-    enterMainApp();
+    if (typeof enterMainApp === "function") enterMainApp();
   } catch (err) {
     console.error("Account creation failed:", err);
     alert(err.message || "Unable to create your account. Please try again.");
@@ -812,7 +861,7 @@ function renderShops() {
   const badge = document.getElementById("shopsCountBadge");
 
   if (isLoadingMapPlaces) {
-    const loadingHtml = `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">Fetching registered places on Indore map within ${escapeHtml(currentRadius)} km...</p>`;
+    const loadingHtml = `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">Fetching live Google places in Indore within ${escapeHtml(currentRadius)} km...</p>`;
     if (container) container.innerHTML = loadingHtml;
     if (preview) preview.innerHTML = loadingHtml;
     return;
@@ -846,7 +895,7 @@ function renderShops() {
           `
         )
         .join("")
-    : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No registered map places found within ${escapeHtml(currentRadius)} km for this filter.</p>`;
+    : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No live places found within ${escapeHtml(currentRadius)} km for this category.</p>`;
 
   if (container) container.innerHTML = cardsHtml;
   if (preview) preview.innerHTML = cardsHtml;
@@ -1047,3 +1096,22 @@ async function createNotice(event) {
     renderNotices();
   }
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  ["radiusSlider", "radiusRange", "radiusSelect"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.value = String(currentRadius);
+      el.addEventListener("input", (e) => setRadius(e.target.value, false));
+      el.addEventListener("change", (e) => setRadius(e.target.value, true));
+    }
+  });
+
+  document.querySelectorAll("[data-category]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setCategory(btn.getAttribute("data-category") || "All");
+    });
+  });
+
+  fetchLiveMapPlaces(currentRadius, currentCategory);
+});
