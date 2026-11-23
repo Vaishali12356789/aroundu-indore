@@ -16,15 +16,6 @@ const REELS_KEY = "aroundu_reels_cache";
 const SHOP_INQUIRIES_KEY = "aroundu_shop_inquiries_cache";
 const INVITES_KEY = "aroundu_friend_invites_cache";
 
-const GOOGLE_CATEGORY_TYPES = {
-  Cafe: ["cafe", "restaurant", "bakery"],
-  Sports: ["sports_complex", "stadium", "gym"],
-  Stationery: ["book_store"],
-  Construction: ["hardware_store"],
-  Entertainment: ["movie_theater", "amusement_center"],
-  Market: ["shopping_mall", "supermarket", "store"]
-};
-
 function getSupabase() {
   if (window.__arounduSupabase) return window.__arounduSupabase;
   if (window.supabase && typeof window.supabase.createClient === "function") {
@@ -68,6 +59,63 @@ let communitiesList = JSON.parse(localStorage.getItem(GROUPS_KEY) || "[]");
 let chatMessagesMap = JSON.parse(localStorage.getItem(CHAT_MESSAGES_KEY) || "{}");
 let activeGroupId = null;
 let groupChatPollTimer = null;
+
+const INDORE_FALLBACK_PLACES = [
+  {
+    id: "fb-1",
+    name: "Chhappan Dukaan Food Hub",
+    category: "Cafe",
+    area: "New Palasia, Indore",
+    distance_km: 1.8,
+    source: "Indore Local",
+    tagline: "Popular evening street food & cafe spot"
+  },
+  {
+    id: "fb-2",
+    name: "Rajwada Central Market",
+    category: "Market",
+    area: "Rajwada, Indore",
+    distance_km: 2.1,
+    source: "Indore Local",
+    tagline: "Traditional local market & shopping hub"
+  },
+  {
+    id: "fb-3",
+    name: "Silicon City & AB Road Builders",
+    category: "Construction",
+    area: "Silicon City / AB Road, Indore",
+    distance_km: 6.4,
+    source: "Indore Local",
+    tagline: "Architecture, planning & building materials"
+  },
+  {
+    id: "fb-4",
+    name: "Vijay Nagar Sports & Turf Arena",
+    category: "Sports",
+    area: "Vijay Nagar, Indore",
+    distance_km: 5.5,
+    source: "Indore Local",
+    tagline: "Evening football, box cricket & fitness"
+  },
+  {
+    id: "fb-5",
+    name: "Sapna Sangeeta Books & Stationery",
+    category: "Stationery",
+    area: "Sapna Sangeeta Road, Indore",
+    distance_km: 2.9,
+    source: "Indore Local",
+    tagline: "Notes, printing, books & office supplies"
+  },
+  {
+    id: "fb-6",
+    name: "Treasure Island & Multiplex",
+    category: "Entertainment",
+    area: "MG Road / Palasia, Indore",
+    distance_km: 2.6,
+    source: "Indore Local",
+    tagline: "Movies, hangout & weekend entertainment"
+  }
+];
 
 const SAMPLE_NOTICES = [
   {
@@ -309,22 +357,34 @@ function calculateDistanceKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function mapGoogleTypesToCategory(types = []) {
-  const t = new Set((types || []).map((x) => String(x).toLowerCase()));
-  if (t.has("cafe") || t.has("restaurant") || t.has("bakery")) return "Cafe";
-  if (t.has("sports_complex") || t.has("stadium") || t.has("gym")) return "Sports";
-  if (t.has("book_store")) return "Stationery";
-  if (t.has("hardware_store")) return "Construction";
-  if (t.has("movie_theater") || t.has("amusement_center")) return "Entertainment";
-  return "Market";
-}
+function mapOsmTagsToCategory(tags = {}) {
+  const amenity = String(tags.amenity || "").toLowerCase();
+  const shop = String(tags.shop || "").toLowerCase();
+  const craft = String(tags.craft || "").toLowerCase();
+  const leisure = String(tags.leisure || "").toLowerCase();
 
-function getPlaceLatLng(loc) {
-  if (!loc) return null;
-  const lat = typeof loc.lat === "function" ? loc.lat() : loc.lat;
-  const lng = typeof loc.lng === "function" ? loc.lng() : loc.lng;
-  if (typeof lat !== "number" || typeof lng !== "number") return null;
-  return { lat, lng };
+  if (
+    ["cafe", "restaurant", "fast_food", "food_court", "bakery"].includes(amenity) ||
+    ["bakery", "coffee", "confectionery"].includes(shop)
+  ) {
+    return "Cafe";
+  }
+  if (["sports_centre", "stadium", "pitch"].includes(leisure) || ["sports"].includes(shop)) {
+    return "Sports";
+  }
+  if (["stationery", "books", "copyshop"].includes(shop)) {
+    return "Stationery";
+  }
+  if (
+    ["builder", "architect", "carpenter", "plumber", "electrician"].includes(craft) ||
+    ["hardware", "building_materials"].includes(shop)
+  ) {
+    return "Construction";
+  }
+  if (["cinema", "theatre", "arts_centre"].includes(amenity)) {
+    return "Entertainment";
+  }
+  return "Market";
 }
 
 function syncRadiusLabels(kmValue) {
@@ -336,79 +396,78 @@ function syncRadiusLabels(kmValue) {
 
 async function fetchLiveMapPlaces(radiusKm = currentRadius, category = currentCategory) {
   const seq = ++placeFetchSeq;
-  currentRadius = Math.max(1, Math.min(50, Number(radiusKm || 10)));
+  currentRadius = Math.max(1, Math.min(25, Number(radiusKm || 10)));
   currentCategory = category || "All";
   syncRadiusLabels(currentRadius);
 
   isLoadingMapPlaces = true;
   renderShops();
 
+  const radiusMeters = currentRadius * 1000;
+  const query = `
+    [out:json][timeout:12];
+    (
+      node["name"]["shop"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+      node["name"]["amenity"~"cafe|restaurant|fast_food|cinema"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+      node["name"]["craft"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+      way["name"]["shop"](around:${radiusMeters},${INDORE_CENTER.lat},${INDORE_CENTER.lon});
+    );
+    out center 40;
+  `;
+
   try {
-    if (!window.google?.maps?.importLibrary) {
-      throw new Error("Google Maps JavaScript API not loaded. Check API key in index.html.");
-    }
-
-    const [{ Place }] = await Promise.all([google.maps.importLibrary("places")]);
-
-    const includedTypes =
-      currentCategory !== "All" && GOOGLE_CATEGORY_TYPES[currentCategory]
-        ? GOOGLE_CATEGORY_TYPES[currentCategory]
-        : [
-            "cafe",
-            "restaurant",
-            "bakery",
-            "book_store",
-            "hardware_store",
-            "movie_theater",
-            "supermarket",
-            "shopping_mall"
-          ];
-
-    const { places = [] } = await Place.searchNearby({
-      fields: ["id", "displayName", "formattedAddress", "location", "types", "rating"],
-      locationRestriction: {
-        center: { lat: INDORE_CENTER.lat, lng: INDORE_CENTER.lon },
-        radius: currentRadius * 1000
-      },
-      includedTypes,
-      maxResultCount: 20
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: query
     });
-
+    if (!res.ok) throw new Error(`Map API HTTP ${res.status}`);
+    const json = await res.json();
     if (seq !== placeFetchSeq) return;
 
-    liveMapPlaces = places
-      .map((p, idx) => {
-        const coords = getPlaceLatLng(p.location);
-        if (!coords) return null;
+    const elements = Array.isArray(json.elements) ? json.elements : [];
+    const parsed = elements
+      .map((el, idx) => {
+        const lat = el.lat ?? el.center?.lat;
+        const lon = el.lon ?? el.center?.lon;
+        const tags = el.tags || {};
+        const name = String(tags.name || "").trim();
+        if (!name || typeof lat !== "number" || typeof lon !== "number") return null;
 
-        const dist = calculateDistanceKm(
-          INDORE_CENTER.lat,
-          INDORE_CENTER.lon,
-          coords.lat,
-          coords.lng
-        );
-        const name = String(p.displayName || "").trim();
-        if (!name) return null;
+        const dist = calculateDistanceKm(INDORE_CENTER.lat, INDORE_CENTER.lon, lat, lon);
+        if (dist > currentRadius) return null;
 
-        const mappedCat =
-          currentCategory !== "All" ? currentCategory : mapGoogleTypesToCategory(p.types);
+        const addr =
+          tags["addr:suburb"] ||
+          tags["addr:neighbourhood"] ||
+          tags["addr:street"] ||
+          "Indore, MP";
 
         return {
-          id: p.id || `gplace-${idx}`,
+          id: `osm-${el.id || idx}`,
           name,
-          category: mappedCat,
-          area: String(p.formattedAddress || "Indore, MP"),
+          category: mapOsmTagsToCategory(tags),
+          area: String(addr),
           distance_km: Number(dist.toFixed(1)),
-          source: "Google Live",
-          tagline: p.rating ? `Rating ${p.rating} ★ • Nearby in Indore` : "Nearby place in Indore"
+          source: "OSM Free",
+          tagline:
+            tags.description ||
+            tags.shop ||
+            tags.amenity ||
+            tags.craft ||
+            "OpenStreetMap place in Indore"
         };
       })
-      .filter((item) => item && item.distance_km <= currentRadius)
+      .filter(Boolean)
       .sort((a, b) => a.distance_km - b.distance_km);
+
+    liveMapPlaces = parsed.length
+      ? parsed
+      : INDORE_FALLBACK_PLACES.filter((p) => p.distance_km <= currentRadius);
   } catch (err) {
     if (seq !== placeFetchSeq) return;
-    console.warn("Google Places searchNearby error:", err.message);
-    liveMapPlaces = [];
+    console.warn("Free OSM map fetch fallback:", err.message);
+    liveMapPlaces = INDORE_FALLBACK_PLACES.filter((p) => p.distance_km <= currentRadius);
   } finally {
     if (seq === placeFetchSeq) {
       isLoadingMapPlaces = false;
@@ -418,16 +477,17 @@ async function fetchLiveMapPlaces(radiusKm = currentRadius, category = currentCa
 }
 
 function setRadius(newRadiusKm, immediate = true) {
-  currentRadius = Math.max(1, Math.min(50, Number(newRadiusKm || 10)));
+  currentRadius = Math.max(1, Math.min(25, Number(newRadiusKm || 10)));
   syncRadiusLabels(currentRadius);
   clearTimeout(radiusDebounceTimer);
 
   if (immediate) {
     fetchLiveMapPlaces(currentRadius, currentCategory);
   } else {
+    renderShops();
     radiusDebounceTimer = setTimeout(() => {
       fetchLiveMapPlaces(currentRadius, currentCategory);
-    }, 300);
+    }, 350);
   }
   if (typeof renderNotices === "function") renderNotices();
 }
@@ -861,7 +921,7 @@ function renderShops() {
   const badge = document.getElementById("shopsCountBadge");
 
   if (isLoadingMapPlaces) {
-    const loadingHtml = `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">Fetching live Google places in Indore within ${escapeHtml(currentRadius)} km...</p>`;
+    const loadingHtml = `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">Fetching free map places in Indore within ${escapeHtml(currentRadius)} km...</p>`;
     if (container) container.innerHTML = loadingHtml;
     if (preview) preview.innerHTML = loadingHtml;
     return;
@@ -895,7 +955,7 @@ function renderShops() {
           `
         )
         .join("")
-    : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No live places found within ${escapeHtml(currentRadius)} km for this category.</p>`;
+    : `<p class="text-xs text-neutral-500 bg-white p-4 rounded-2xl border border-neutral-200/80">No places found within ${escapeHtml(currentRadius)} km for this filter.</p>`;
 
   if (container) container.innerHTML = cardsHtml;
   if (preview) preview.innerHTML = cardsHtml;
