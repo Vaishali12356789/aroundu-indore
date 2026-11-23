@@ -33,7 +33,7 @@
 </head>
 <body class="bg-neutral-100 min-h-screen text-neutral-900 flex justify-center items-center font-sans antialiased">
 
-  <!-- AUTH / MULTI-STEP SIGN UP SCREEN -->
+  <!-- AUTH / MULTI-STEP SIGN UP + OTP SCREEN -->
   <div id="auth-screen" class="w-full max-w-md min-h-screen bg-white flex flex-col justify-between p-6 shadow-2xl relative z-50 border-x border-neutral-200/70">
     <div class="flex flex-col gap-5 my-auto">
       <div class="text-center">
@@ -105,14 +105,14 @@
         </p>
       </form>
 
-      <!-- MULTI-STEP SIGN UP FORM -->
+      <!-- MULTI-STEP SIGN UP + OTP FORM -->
       <form id="signup-form" onsubmit="completeOnboarding(event)" class="hidden flex-col gap-4">
         <div class="flex items-center justify-between text-[11px] font-bold text-neutral-500 border-b border-neutral-100 pb-2">
-          <span id="step-indicator">Step 1 of 3 • Account Details</span>
+          <span id="step-indicator">Step 1 of 3 • Account & OTP</span>
           <span class="text-pink-600">Indore</span>
         </div>
 
-        <!-- Step 1 -->
+        <!-- Step 1: Details + OTP Verification -->
         <div id="signup-step-1" class="flex flex-col gap-3">
           <div>
             <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Full Name</label>
@@ -126,12 +126,44 @@
 
           <div>
             <label class="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">Email Address</label>
-            <input
-              type="email"
-              id="reg-email"
-              placeholder="yourname@gmail.com"
-              class="w-full mt-1 px-3.5 py-2.5 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-pink-500 bg-neutral-50 font-medium transition"
-            />
+            <div class="flex gap-2 mt-1">
+              <input
+                type="email"
+                id="reg-email"
+                placeholder="yourname@gmail.com"
+                class="flex-1 px-3.5 py-2.5 border border-neutral-200 rounded-xl text-xs focus:outline-none focus:border-pink-500 bg-neutral-50 font-medium transition"
+              />
+              <button
+                type="button"
+                onclick="sendSignupOtp()"
+                class="px-3 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-[11px] font-bold shrink-0 cursor-pointer"
+              >
+                Send OTP
+              </button>
+            </div>
+          </div>
+
+          <div id="otp-box" class="bg-pink-50/70 border border-pink-200 rounded-xl p-2.5 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span id="otp-status-text" class="text-[11px] font-semibold text-neutral-700">Verify OTP before continuing</span>
+              <span id="otp-badge" class="text-[10px] font-black px-2 py-0.5 rounded-full bg-white text-pink-600 border border-pink-200">Unverified</span>
+            </div>
+            <div class="flex gap-2">
+              <input
+                type="text"
+                id="reg-otp-input"
+                maxlength="6"
+                placeholder="Enter 6-digit OTP"
+                class="flex-1 px-3 py-2 border border-neutral-200 rounded-xl text-xs bg-white font-bold tracking-widest focus:outline-none focus:border-pink-500"
+              />
+              <button
+                type="button"
+                onclick="verifySignupOtp()"
+                class="px-3 py-2 rounded-xl ig-gradient text-white text-[11px] font-bold shrink-0 cursor-pointer"
+              >
+                Verify OTP
+              </button>
+            </div>
           </div>
 
           <div>
@@ -211,24 +243,12 @@
               Interests (Personalizes Feed & Reels)
             </label>
             <div id="reg-interests" class="flex flex-wrap gap-1.5">
-              <button type="button" data-interest="Entertainment" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">
-                Entertainment
-              </button>
-              <button type="button" data-interest="Sports" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">
-                Sports & Football
-              </button>
-              <button type="button" data-interest="Market" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">
-                Market & Errands
-              </button>
-              <button type="button" data-interest="Cafe" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">
-                Cafes & Food
-              </button>
-              <button type="button" data-interest="Construction" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">
-                Construction
-              </button>
-              <button type="button" data-interest="Stationery" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">
-                Stationery
-              </button>
+              <button type="button" data-interest="Entertainment" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">Entertainment</button>
+              <button type="button" data-interest="Sports" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">Sports & Football</button>
+              <button type="button" data-interest="Market" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">Market & Errands</button>
+              <button type="button" data-interest="Cafe" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">Cafes & Food</button>
+              <button type="button" data-interest="Construction" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">Construction</button>
+              <button type="button" data-interest="Stationery" onclick="toggleInterest(this)" class="interest-chip px-3 py-1 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200 hover:border-pink-400 transition cursor-pointer">Stationery</button>
             </div>
           </div>
 
@@ -288,12 +308,12 @@
     </header>
 
     <!-- Navigation Tabs -->
-    <nav class="bg-white border-b border-neutral-200/70 flex justify-around px-1 pt-2.5 pb-1 text-[11px] font-bold text-neutral-400 sticky top-[61px] z-30">
+    <nav class="bg-white border-b border-neutral-200/70 flex justify-around px-1 pt-2.5 pb-1 text-[10.5px] font-bold text-neutral-400 sticky top-[61px] z-30">
       <button type="button" onclick="switchTab('explore')" id="tab-explore" class="pb-2 px-1.5 cursor-pointer">Explore</button>
       <button type="button" onclick="switchTab('reels')" id="tab-reels" class="pb-2 px-1.5 cursor-pointer">Reels</button>
       <button type="button" onclick="switchTab('shops')" id="tab-shops" class="pb-2 px-1.5 cursor-pointer">Shops</button>
       <button type="button" onclick="switchTab('notices')" id="tab-notices" class="pb-2 px-1.5 cursor-pointer">Notices</button>
-      <button type="button" onclick="switchTab('groups')" id="tab-groups" class="pb-2 px-1.5 cursor-pointer">Groups</button>
+      <button type="button" onclick="switchTab('groups')" id="tab-groups" class="pb-2 px-1.5 cursor-pointer">Chats & Groups</button>
       <button type="button" onclick="switchTab('profile')" id="tab-profile" class="pb-2 px-1.5 cursor-pointer">Profile</button>
     </nav>
 
@@ -339,14 +359,14 @@
         <div id="feedContainer" class="flex flex-col gap-3"></div>
       </section>
 
-      <!-- REELS SECTION (CREATE REEL + SHORT VIDEO FEED) -->
+      <!-- REELS SECTION (SHORT VIDEO REEL FEED + UPLOAD REEL) -->
       <section id="section-reels" class="hidden flex-col gap-4">
         <form id="createReelForm" onsubmit="createReel(event)" class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-2.5">
-          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Post a Reel</h3>
+          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Upload Short Video Reel</h3>
           <input
             type="text"
             id="reelTitle"
-            placeholder="Reel caption or title (e.g., Rau cafe evening vibe)"
+            placeholder="Reel caption (e.g., Rau cafe evening vibe)"
             class="w-full px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
           />
           <div class="grid grid-cols-2 gap-2">
@@ -365,21 +385,27 @@
               type="text"
               id="reelArea"
               value="Indore"
-              placeholder="Location in Indore"
+              placeholder="Area in Indore"
               class="px-2.5 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium"
             />
           </div>
           <input
+            type="file"
+            id="reelVideoFile"
+            accept="video/*"
+            class="w-full text-[11px] text-neutral-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-neutral-100 file:text-neutral-800 hover:file:bg-neutral-200 cursor-pointer"
+          />
+          <input
             type="url"
             id="reelVideoUrl"
-            placeholder="Video URL (.mp4 link — optional, sample video used if blank)"
+            placeholder="Or paste direct .mp4 video URL"
             class="w-full px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
           />
           <button
             type="submit"
             class="w-full ig-gradient text-white py-2.5 rounded-xl text-xs font-bold hover:opacity-95 transition cursor-pointer"
           >
-            Publish Reel
+            Post Reel
           </button>
         </form>
 
@@ -397,7 +423,7 @@
           </div>
           <h3 class="text-sm font-black text-neutral-900">List Your Shop in Indore</h3>
           <p class="text-xs text-neutral-600">
-            Get featured in Indore local search with our <strong>₹99/month</strong> priority listing plan. Contact directly on WhatsApp or submit your shop details below.
+            Get featured in Indore local search with our <strong>₹99/month</strong> priority listing plan. Contact directly on WhatsApp or send your shop details below.
           </p>
           <a
             href="https://wa.me/919131484821?text=Hi%2C%20I%20want%20to%20list%20my%20shop%20on%20AroundU%20Indore%20(%E2%82%B999%2Fmonth%20plan)."
@@ -496,27 +522,88 @@
         <div id="noticesContainer" class="flex flex-col gap-3"></div>
       </section>
 
-      <!-- GROUPS SECTION -->
-      <section id="section-groups" class="hidden flex-col gap-3">
+      <!-- CHATS, CREATE GROUP & INVITE FRIENDS SECTION -->
+      <section id="section-groups" class="hidden flex-col gap-4">
+        <!-- Create Group Form -->
+        <form id="createGroupForm" onsubmit="createNewGroup(event)" class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-2.5">
+          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Create a Group</h3>
+          <div class="grid grid-cols-2 gap-2">
+            <input
+              type="text"
+              id="newGroupName"
+              placeholder="Group name (e.g., Rau Runners)"
+              class="px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
+            />
+            <input
+              type="text"
+              id="newGroupArea"
+              value="Indore"
+              placeholder="Area / Circle"
+              class="px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
+            />
+          </div>
+          <button
+            type="submit"
+            class="w-full bg-neutral-900 hover:bg-neutral-800 text-white py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+          >
+            Create Group
+          </button>
+        </form>
+
+        <!-- Groups List -->
         <div id="groupsListContainer" class="flex flex-col gap-2"></div>
 
+        <!-- Group / Direct Chat Box -->
         <div class="bg-white p-3.5 rounded-2xl border border-neutral-200/80 flex flex-col gap-3">
+          <div class="flex items-center justify-between border-b border-neutral-100 pb-2">
+            <span id="activeChatHeader" class="text-xs font-black text-neutral-900">Group Chat</span>
+            <span class="text-[10px] font-bold text-pink-600">Live Chat</span>
+          </div>
+
           <div id="groupChatMessages" class="max-h-64 overflow-y-auto flex flex-col gap-2 pr-1"></div>
 
           <form id="groupChatForm" onsubmit="sendGroupMessage(event)" class="flex gap-2 pt-2 border-t border-neutral-100">
             <input
               type="text"
               id="groupChatInput"
-              placeholder="Write a message to the group..."
+              placeholder="Write a message..."
               class="flex-1 px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
             />
             <button
               type="submit"
-              class="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold transition cursor-pointer"
+              class="px-4 py-2 rounded-xl ig-gradient text-white text-xs font-bold transition cursor-pointer"
             >
               Send
             </button>
           </form>
+        </div>
+
+        <!-- Invite Friends Box -->
+        <div class="bg-white p-4 rounded-2xl border border-neutral-200/80 flex flex-col gap-2.5">
+          <h3 class="text-xs font-black uppercase tracking-wider text-neutral-500">Invite Friends to AroundU</h3>
+          <div class="flex gap-2">
+            <input
+              type="text"
+              id="inviteFriendInput"
+              placeholder="Friend's username, email, or phone"
+              class="flex-1 px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-50 text-xs font-medium focus:outline-none focus:border-pink-500"
+            />
+            <button
+              type="button"
+              onclick="sendFriendInvite()"
+              class="px-3.5 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold cursor-pointer"
+            >
+              Invite
+            </button>
+          </div>
+          <button
+            type="button"
+            onclick="copyInviteLink()"
+            class="w-full py-2 rounded-xl bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200 text-xs font-bold transition cursor-pointer"
+          >
+            Copy Invite Link
+          </button>
+          <div id="invitedFriendsList" class="flex flex-col gap-1.5"></div>
         </div>
       </section>
 
